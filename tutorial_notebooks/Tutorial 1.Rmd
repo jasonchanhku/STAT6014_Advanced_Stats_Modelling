@@ -1,0 +1,117 @@
+---
+title: "Tutorial 1"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries 
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(tidyverse)
+library(psych)
+```
+
+# Dplyr 
+
+Main useful functions
+
+* `mutate()`
+* `select()`
+* `filter()`
+* `arrange()`
+
+```{r}
+head(mtcars)
+```
+
+
+```{r}
+str(mtcars)
+```
+
+```{r}
+describe(mtcars, skew = F, ranges = F)
+```
+
+## Mutate
+
+Adding new variables/columns
+
+```{r}
+mtcarsnew1 <- mtcars %>% mutate(kpg = 1.609*mpg) ; str(mtcarsnew1)
+```
+
+## Transmute
+
+* Does not return the whole df, but just the constructed column
+
+```{r}
+mtcarsnew2 <- mtcars %>% transmute(kpg = 1.609*mpg) ; mtcarsnew2
+```
+
+## Select
+
+selects / subsets some columns
+
+```{r}
+mtcars.sel1 <- mtcars %>% select(c("vs", "mpg", "hp")) ; mtcars.sel1
+```
+
+Select columns that starts with (sub)string
+```{r}
+mtcars.sel2 <- mtcars %>% select(starts_with('d')) ; mtcars.sel2
+```
+
+## Filter
+
+Filter rows with conditions
+
+```{r}
+mtcars.fil1 <- mtcars %>% filter(carb==4 & gear==3) ; mtcars.fil1
+```
+
+```{r}
+mtcars.fil2 <- mtcars %>% filter(hp > mean(hp)); mtcars.fil2
+```
+
+## Arrange
+
+For sorting column(s)
+
+```{r}
+mtcars %>% arrange(disp)
+```
+
+```{r}
+mtcars %>% arrange(desc(disp))
+```
+
+```{r}
+mtcars %>% arrange(cyl, disp)
+```
+
+## Group by
+
+```{r}
+mtcars %>% group_by(cyl) %>% summarise(disp_mu=mean(disp), hp_mu=mean(hp))
+```
+
+### Apply to all 
+
+```{r}
+mtcars %>% 
+  group_by(cyl) %>% 
+    summarise_all(funs(mean = mean(., na.rm = TRUE)))
+```
+
+### Apply to some columns
+
+```{r}
+mtcars %>% 
+  group_by(cyl) %>% 
+    summarise_at(vars(mpg, disp, hp), funs(mean = mean(., na.rm = TRUE)))
+```
+
