@@ -1,0 +1,349 @@
+---
+title: "STAT6014 Chapter 1"
+author: "Jason Chan"
+date: "2/2/2020"
+output:
+  html_notebook:
+    toc: yes
+  html_document:
+    df_print: paged
+    toc: yes
+---
+# Libraries
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(glm2)
+library(glue)
+library(tidyverse)
+library(lmtest)
+library(purrr)
+library(tidyr)
+
+```
+
+# Logistic Regression
+
+# Analyzing Challenger Data
+
+## EDA
+
+```{r}
+ca <-data.frame("Temp"=c(53,56,57,63,66,67,67,67,68,69,70,70,
+70,70,72,73,75,75,76,76,78,79,80,81),
+"Failure"=c(rep(1,3),rep(0,8),rep(1,3),rep(0,3),
+1,rep(0,6)))
+
+summary(ca)
+```
+
+
+```{r}
+ca
+```
+
+```{r}
+table(ca$Failure)
+```
+
+A lot more 0's than 1's, imbalanced.
+
+## Modelling using Logistric Regression
+```{r}
+# using glm2 function
+
+fit <- glm2(formula = Failure~Temp, family = "binomial", data = ca)
+summary(fit)
+```
+
+* This implies that $\beta_0 = 10.87535$ and $\beta_1 = -0.17132$
+
+* This means that the fitted model is $logit(\pi) = 10.87535-0.17132x$
+
+* And the estimated probability $\pi_i = e^{10.87535  -0.17132x} / (1+e^{10.87535  -0.17132x})$
+
+## Prediction
+
+```{r}
+plotdata<-data.frame(Temp = seq(50,85,0.1))
+predicted <-predict(fit, newdata= plotdata, type = "response")
+```
+
+## Probability Plot
+```{r}
+plot(ca$Temp, ca$Failure, pch= 16, xlim= c(50,85), xlab= "Temperature", ylab= "Probability")
+lines(plotdata$Temp, predicted)
+```
+
+Probality of break at Temp=50 Farenheit
+
+```{r}
+predict(fit, newdata= data.frame(Temp = c(50)), type = "response")
+```
+
+## Interpreting the Parameters (Beta)
+
+```{r}
+cbind(OR=coef(fit), confint(fit))
+```
+
+Need to exponential it to get the odds ratio
+
+```{r}
+exp(cbind(OR=coef(fit), confint(fit)))
+```
+
+Since the **odds ratio (OR)** of Temp is 0.843 < 1, Temp is associated with a decrease in odds of 16% for an increase of 1 unit in Temp.
+
+```{r}
+1 - 8.425515e-01
+```
+
+
+For an increase in 5F in Temp, would result in odd reduction of
+
+```{r}
+1 - exp(5*-0.1713205)
+```
+
+## Feature Selection using Likelihood Ratio Test
+
+* Null Model: $logit(\pi) = \beta_0$
+* Full Model: $logit(\pi) = \beta_0 + \beta_1x_1$
+
+```{r}
+# Null model
+fitNull <- glm2(Failure~1, family = 'binomial', data = ca)
+lrtest(fitNull, fit)
+```
+
+* Temperature is significant and should be included in full model
+
+# Analyzing Neuralgia Patients Data
+
+## EDA
+
+```{r}
+# Create dataframe for Neuralgia Patients data
+npd <- data.frame("Trt"=c('A','B','P'),
+                  "Pain"=c(4,5,15),
+                  "NoPain"=c(16,15,5))
+
+# set reference class of Trt to 'P' for reference coding
+npd$Trt <- relevel(npd$Trt, ref='P')
+
+npd
+```
+
+## Modelling
+
+Note that data above is aggregated and will use a different syntax for model fitting as below:
+
+```{r}
+fit <- glm2(cbind(Pain, NoPain) ~ Trt, family = 'binomial', data=npd)
+summary(fit)
+```
+
+* Hence, the fitted model is $logit(\pi_x)=1.0986 - 2.4849I_A - 2.1972I_B$
+
+* The logits for each treatment are:
+  * Treatment A: $logit(\pi_A)=1.0986 - 2.4849I_A=-1.3863$
+  * Treatment B: $logit(\pi_B)=1.0986 - 2.1972I_B=-1.0986$
+  * Placebo: $logit(\pi_P)=1.0986$
+
+Their probabilities of Pain are:
+
+```{r}
+prob_func <- function(x){
+  return(exp(x)/(1+exp(x)))
+}
+
+prob_func(c(-1.3863, -1.0986, 1.0986))
+```
+
+Placebo still gives high prob of pain compared to treatment A and B
+
+Odds ratio of A to B:
+
+```{r}
+exp(-2.4849 - (-2.1972))
+```
+Hence, a 25% reduction in odds of pain by treatment A compared to B.
+
+Odds ratio of A to Placebo:
+
+```{r}
+exp(-2.4849)
+
+glue("reduction of {1- exp(-2.4849)} in odds")
+```
+
+Odds Reduction:
+
+```{r}
+exp(cbind(OR=coef(fit), confint(fit)))
+```
+
+Obviously Treatment A has the highest reduction in odds.
+
+## Feature Selection using Likelihood Ratio Test
+
+* $H_0: \beta_1 = \beta_2 = 0$
+  * Testing if A and B are the same as placebo
+  * All 3 are indifferent in treating pain
+  * Comparing all 3 treatments, not just one to another
+  
+
+* Null Model: $logit(\pi) = \beta_0$
+* Full Model: $logit(\pi) = \beta_0 + \beta_1 I_{x=A} + \beta_2 I_{x=B}$ (using Placebo as reference group)
+
+```{r}
+fitNull <- glm2(cbind(Pain, NoPain)~1, family = 'binomial', data=npd)
+lrtest(fitNull, fit)
+```
+
+# Analyzing Prison Sentencing Data
+
+```{r}
+# Create dataframe for Prison Sentencing data
+psd <- data.frame("ibus"=c(1,1,0,0),
+                  "iprior"=c(0,1,0,1),
+                  "prison"=c(17,42,54,33),
+                  "noprison"=c(75,109,359,175)) ; psd
+```
+
+## Fit Additive Logistic Regression Model
+
+* Test if prior arrest and crime type is related to prison sentencing
+
+```{r}
+additive <- glm2(cbind(prison, noprison)~ibus+iprior, family = 'binomial', data = psd)
+
+summary(additive)
+```
+
+* Small deviance indicates model is sufficient to fit data
+* LRT statistic is 16.0740 - 0.5779 = 15.4961
+
+## Compare fitting 1 variable with 2
+
+```{r}
+fit2 <- glm2(cbind(prison, noprison)~ibus, family = 'binomial', data = psd)
+
+summary(fit2)
+```
+```{r}
+fitNull <- glm2(cbind(prison, noprison)~1, family = 'binomial', data = psd)
+
+lrtest(fitNull, additive)
+```
+
+
+
+```{r}
+lrtest(fit2, additive)
+```
+
+* The slight difference is Log likelihood and based on ChiSq statistic, iprior is marginally insignificant.
+
+# Poisson Regression
+
+# Aircraft Damage Data Analysis
+
+## EDA
+
+```{r}
+# Read Aircraft Damage data
+aircraft <-read.csv(file="/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/data/aircraft.csv", header=TRUE,sep=",") ; aircraft
+```
+
+```{r}
+aircraft_df <- as.data.frame(table(as.factor(aircraft$y)))
+
+ggplot(aircraft_df, aes(fill=Var1, y=Freq, x=Var1)) + 
+    geom_bar(position="dodge", stat="identity")
+```
+
+```{r}
+aircraft %>%
+  keep(is.numeric) %>%                     # Keep only numeric columns
+  gather() %>%                             # Convert to key-value pairs
+  ggplot(aes(value)) +                     # Plot the values
+    facet_wrap(~ key, scales = "free") +   # In separate panels
+    geom_density()                         # as density
+```
+
+* Model the response as a Poisson dist and as a function of linear combination of the independent variables
+* Assume that the log of the mean is related with  linear combination of predictors
+* $log(\mu(x)) = x^{'}\beta = \beta_0 + \beta_1x_1 + ...+\beta_px_p$  
+
+## Modelling
+
+```{r}
+fit <- glm2(y~x1+x2+x3, family = "poisson", data = aircraft)
+summary(fit)
+```
+
+* Fitted model is then $log(\mu(x)) = -0.406023 + 0.568772x_1 + 0.165425x_2 - 0.013522x_3$
+
+* Note that x1 and x3 are insignificant
+* p-values are from a Wald's test, might be less accurate in terms of significance, do a type 3 LR test
+
+## Type 3 Analysis by LR Test
+
+* Similar to doing a backward elimination process
+
+```{r}
+drop1(fit, test = "LR")
+```
+
+* In this case, x1 is most insignificant, drop it
+
+```{r}
+fit2 <- glm2(y~x2+x3, family = poisson, data = aircraft)
+drop1(fit2, test = "LR")
+```
+
+* It seems x3 is insignificant, but p value higher than before, indicating signs of multicollinearity
+* Use glmulti for exhaustive search
+
+## Exhaustive search with `glmulti`
+```{r}
+# compare all possible models
+fitall <- glmulti(y~x1+x2+x3, family = poisson, data = aircraft,
+                  level = 1, method = "h", crit = "aicc")
+
+# print brief summary 
+print(fitall)
+
+# fit best model 
+fitbest <- glm2(y~x2, family = poisson, data = aircraft)
+summary(fitbest)
+```
+
+* refer to lecture notes
+
+# Mine Fracture Data
+
+## EDA
+
+```{r}
+# Read Mine Fractures data
+mine <-read.csv(file="mine.csv", header=TRUE,sep=",")
+
+# compare all possible models
+fitall <- glmulti(y~x1+x2+x3+x4, family = poisson, data = mine,
+                  level = 1, method = "h", crit = "aicc")
+
+# print brief summary 
+print(fitall)
+
+# print AICc for all models
+weightable(fitall)
+
+# fit best model 
+fitbest <- glm2(y~x1+x2+x4, family = poisson, data = mine)
+summary(fitbest)
+```
+
