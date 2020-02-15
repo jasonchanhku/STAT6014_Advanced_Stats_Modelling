@@ -1,0 +1,207 @@
+---
+title: "Tutorial 2"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r, warning=FALSE, echo=FALSE}
+library(dplyr)
+library(tidyr)
+library(glm2)
+library(lmtest)
+```
+
+# Logistic Regression
+
+A group of 118 children aged between 3 and 6 were sampled. They were asked whether or not they believed in Santa Claus. The results are tabulated below:
+
+```{r}
+tbl <- as.table(rbind(c(30,13,15,5), c(5,10,12,28)))
+dimnames(tbl) <- list(believe = c("Yes","No"), 
+                      age = c("Age3","Age4","Age5","Age6"))
+tbl
+```
+
+## Question (a) 
+
+Conduct an independence test between “age” and “believe” using the Pearson χ2 test.
+
+<center>
+$H_0:$ Age and Believe are independent
+</center>
+```{r}
+chisq.test(tbl)
+```
+
+The χ2 Statistic is 34.227 and p-value < 0.0001. Hence, reject the null hypothesis at a 5% level at significance. 
+
+## Question (b)
+
+Suppose “age” is the explanatory variable and “believe” is the response variable. Suggest a suitable regression model for this dataset.
+
+* Logistic regression model with "believe" as response variable and belive as the categorical variable.
+
+## Question (c)
+
+Run the regression model in R, use Age6 as reference class.
+
+```{r}
+df <- data.frame("Age"=c("Age3", "Age4", "Age5", "Age6"), 
+                 "Yes"=c(30, 13, 15, 5),
+                 "No"=c(5,10,12,28))
+
+df$Age <- relevel(df$Age, ref = "Age6")
+
+df
+```
+
+
+```{r}
+
+fit <- glm2(formula = cbind(Yes, No)~Age, family = "binomial", data = df)
+
+summary(fit)
+```
+
+## Question (d)
+
+Write down the fitted regression model and estimate the probabilities for each age group.
+
+* The regression model is as follows:
+
+$$logit(\hat{\pi}) = -1.7228 + 3.5145I_{Age3} + 1.9851I_{Age4} + 1.9459I_{Age5}$$
+
+* The Probabilities for each Age are:
+
+```{r}
+
+coefs <- summary(fit)$coefficients[1:4]
+
+logit6 <- coefs[1]
+logit5 <- coefs[1] + coefs[4]
+logit4 <- coefs[1] + coefs[3]
+logit3 <- coefs[1] + coefs[2]
+
+logit_list <- c(logit6, logit5, logit4, logit3)
+
+sigmoid <- function(x){
+  return(exp(x)/(1+exp(x)))
+}
+
+probs <- sigmoid(logit_list)
+probs
+```
+
+<center>
+
+${\pi}_{Age6}$ = `r probs[1]` \
+${\pi}_{Age5}$ = `r probs[2]` \
+${\pi}_{Age4}$ = `r probs[3]` \
+${\pi}_{Age3}$ = `r probs[4]`
+
+</center>
+
+## Question (e)
+
+Test for the global significance of this model
+
+
+Likelihood ratio test
+
+```{r}
+fit0 <- glm2(formula = cbind(Yes, No)~1, family = "binomial", data = df)
+
+lrtest(fit0, fit)
+```
+
+LR = 37.672 with df = 3, so that p-value < 0.0001. The model is significant at the 5% level of significance.
+
+## Question (f)
+
+Does part (e) give the same conclusion as part (a)?
+
+Yes
+
+## Question (g)
+
+What is the estimated odds-ratio between a 3-year old and a 6-year old believing in Santa Claus? Is it significant?
+
+```{r}
+ci <- exp(cbind(OR=coef(fit), confint(fit)))
+ci
+```
+
+* Odds ratio is 33.6 and confidence interval well exceeds 1. Hence, children aged 3 are significantly more likely to believe in Santa compared to children with ge 6.
+
+
+## Question (h)
+
+What is the estimated odds-ratio between a 4-year old and a 5-year old believing in Santa Claus? Is it significant?
+
+```{r}
+# making 5 year old the reference group
+df$Age <- relevel(df$Age, ref = "Age5")
+fit5 <- glm2(formula = cbind(Yes, No)~Age, family = "binomial", data = df)
+
+exp(cbind(OR=coef(fit5), confint(fit5)))
+```
+
+## Question (i)
+
+Using the contingency table, compute the sample odds-ratio between a 4-year old and a 5-year old believing in Santa Claus.
+
+```{r}
+tbl
+```
+
+```{r}
+(13/10) / (15/12)
+```
+
+It is consistent with the odds ratio computed from the fitted logistic regression model. (The little discrepancy is just due to rounding error.)
+
+## Question (j)
+
+Run the regression model again using “age” as a quantitative variable this time.
+
+```{r}
+df2<- data.frame("age" = 3:6,
+                     "Yes" = c(30,13,15,5),
+                     "No" = c(5,10,12,28))
+df2
+```
+
+```{r}
+fit_q <- glm2(formula = cbind(Yes, No) ~ age, family = "binomial", data=df2)
+
+summary(fit_q)
+```
+
+Regression model is as follow:
+
+$$logit(\hat{\pi}) = 4.8076 - 1.0286 \times age$$
+
+## Question (k)
+
+What is the effect on the probability (odds?) of believing in Santa if the child is 1 year older?
+
+```{r}
+exp(cbind(OR=coef(fit_q), confint(fit_q)))
+```
+
+```{r}
+1 - 0.3575017
+```
+
+reduction in odds of 64.2% of believing in Santa
+
+# Takeaways
+
+* Pearson Chi-sq test for independence
+* Use LR test to test global significance, all regressors vs just B0
+* Use of OR exp(beta) and confidence intervals (lower) must be above 1 to have significant impact
+
+
