@@ -1,0 +1,214 @@
+---
+title: "Chapter 2 - Generalized Linear Models"
+output:
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r, warning=FALSE, echo=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(psych)
+library(magrittr)
+library(glm2)
+library(MASS)
+```
+
+# Resistivity Data (Gamma Distribution)
+
+```{r}
+# Create dataframe for Resistivity data
+res <- data.frame("y" = c(193.4,247.6,168.2,205.0,303.4,339.9,226.3,208.3,
+                          220.0,256.4,165.7,203.5,285.0,268.0,169.1,208.5),
+                  "x1" = rep(c(-1,1),8), 
+                  "x2" = rep(c(-1,-1,1,1),4),
+                  "x3" = rep(c(rep(-1,4),rep(1,4)),2), 
+                  "x4" = c(rep(-1,8),rep(1,8)))
+
+res
+```
+
+## Using the Canonical Link (reciprocal)
+
+By default, R uses the canonical link, in this case of Gamma, is `family=Gamma(link="inverse")`
+
+```{r}
+Gafit1 <- glm2(y~x1+x2+x3+x4, family = Gamma, data=res)
+summary(Gafit1)
+```
+
+This implies the following fitted model:
+
+$$\hat{\mu} = \frac{1}{0.0045-0.0002x_1 + 0.0007x_2 - 0.0004x_3 + 0.0001x_4}$$
+
+* Increase in x1 and x3 result in higher mu
+* Increase in x2 and x4 result in lower mu
+* Hard to interpret the parameters
+
+## Using the **log-link**
+
+```{r}
+Gafit2 <- glm2(y~x1+x2+x3+x4, family = Gamma(link="log"), data = res)
+summary(Gafit2)
+```
+
+The fitted model is now:
+
+$$\hat{\mu} = e^{5.4170 + 0.0606x_1 - 0.15024x_2 + 0.0899x_3 - 0.0288x_4 } $$
+
+* An increase in x1 from -1 to 1 (2 units) will hence be $e^{2(0.0606)} = 1.129 $
+* Increase of mu by 13%
+* Also note that the dispersion, $\psi = 0.011$
+
+## Dispersion Paramter
+
+`glm` only provides crude fit of $\psi$ using the MME. To compute using the MLE, need to use the `MASS` package.
+
+```{r}
+g <- gamma.shape(Gafit2) ; g
+```
+
+* This implies that $\hat{r} = 129.01$ and $\psi = \frac{1}{\hat{r}}$
+* Hence, $\psi = \frac{1}{129.01} = 0.007751$
+
+Verify below:
+
+```{r}
+d <- gamma.dispersion(Gafit2) ; d
+```
+
+### Scaled Deviance
+
+$$SD = \frac{Residual Deviance}{\hat{\psi}}$$
+
+```{r}
+sd <- Gafit2$deviance / d; sd
+```
+
+### Fitness
+
+```{r}
+sd / Gafit2$df.residual
+```
+
+* Close to one implies no lack of fit
+
+## Two Factor Interaction
+
+```{r}
+Gafit3 <- glm2(y~(x1+x2+x3+x4)*(x1+x2+x3+x4), 
+               family = Gamma(link = "log"), data = res)
+
+summary(Gafit3)
+```
+
+```{r}
+drop1(Gafit3, test = "LR")
+```
+
+* Main effects won't be dropped when interaction is present
+* x1:x3, x2:x3, and x3:x4 are significant
+
+### Removing Insignificant Interactions
+
+* Also using the estimated dispersion, $\psi$ from the `MASS` package.
+
+```{r}
+Gafit4 <- glm2(y~x1+x2+x3+x4+x1:x3+x2:x3+x3:x4, 
+               family = Gamma(link = "log"), data = res)
+
+summary.Gafit4<-summary(Gafit4, dispersion = gamma.dispersion(Gafit4))
+summary.Gafit4
+```
+
+* If interaction is significant and main is not, we try not to remove the main.
+
+### Scaled Deviance 
+
+```{r}
+sd <- Gafit4$deviance / gamma.dispersion(Gafit4); sd
+```
+
+### Fitness
+
+```{r}
+sd / Gafit4$df.residual
+```
+
+* 2 >> 1 , hence, there is underfit
+
+## Deviance Residual Plot
+
+```{r}
+# Construct deviance residual plot
+plot(Gafit4$linear.predictor, residuals(Gafit4, "deviance"), 
+     pch = 16, main = "Deviance Residuals by XBeta for y",
+     xlab = "Linear Predictor", ylab = "Deviance Residual")
+```
+
+* Components of deviance contributed by each observation
+* Points should fall randomly on both sides of zero, no systematic relationship
+* Else, there is a systematic relationship between response and independent varibles not captured yet.
+
+# Attendance Data 
+
+```{r}
+atd <- read_csv("/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Lecture codes/R codes and data for Chapter 2 examples-20200202/attendance.csv")
+
+# Set factor variables
+atd$gender <- as.factor(atd$gender)
+atd$prog <- relevel(as.factor(atd$prog),ref='3')
+
+atd
+```
+
+## Poisson Attempt
+
+```{r}
+# Fit Poisson regression model 
+poifit <- glm2(daysabs~math+prog, family = poisson, data = atd)
+summary(poifit)
+```
+
+* Fitness of 1774 / 310 = 5.72 >> 1, underfit
+* Due to the overdispersion of the dayabs
+
+## Negative Binomial Distribution
+
+$$Var(y | x) = \mu(1+a\mu)$$
+
+* a or r is the dispersion parameter which controls severity of over dispersion
+
+```{r}
+nbfit <- glm.nb(daysabs~math+prog, link = log, data = atd)
+summary(nbfit)
+```
+
+* Fitness = 358.82 / 310 = 1.16, better than Poisson
+* Estimared r, Theta = r_hat = 1.033 , a = 1/1.033 = 0.9683
+
+$$log(\hat{\mu}) = 1.336 - 0.006math + 1.279I_{prog=1} + 0.838I_{prog=1}$$
+* Students with lower math score, enrolled in program 1 or 2 are absent more
+
+### LR Test
+```{r}
+# Type III analysis
+drop1(nbfit, test="LR")
+```
+
+### Replicating the Negative Binomial in `glm2`
+
+* Use back the r / theta = 1.0327 as input
+
+```{r}
+# Fit negative binomial regression model
+# with known negative binomial dispersion parameter
+# (note that the response distribution is in exponential family)
+nbfit2 <- glm2(daysabs~math+prog, negative.binomial(1.0327, link="log"), 
+               data = atd)
+summary(nbfit2, dispersion = 1)
+```
+
