@@ -1,0 +1,304 @@
+---
+title: "Tutorial 3 - Poisson Regression ROC"
+output: 
+  html_notebook:
+    toc: true
+---
+# Library
+```{r, echo=TRUE, warning=FALSE}
+library(glm2)
+library(pROC)
+library(ggplot2)
+library(lmtest)
+library(broom)
+library(glmulti)
+library(magrittr)
+library(dplyr)
+library(tidyverse)
+library(glue)
+#library(plotROC)
+#library(precrec)
+```
+
+# Challenger Data
+
+```{r}
+# Create dataframe for Challenger accident data
+ca <- data.frame("Temp"=c(53,56,57,63,66,67,67,67,68,69,70,70,
+                          70,70,72,73,75,75,76,76,78,79,80,81),
+                 "Failure"=c(rep(1,3),rep(0,8),rep(1,3),rep(0,3),1,rep(0,6)))
+ca
+```
+
+```{r}
+ggplot(data.frame(table(ca$Failure)), aes(x=Var1, y=Freq, fill=Var1)) + geom_bar(stat="identity", position="dodge")
+```
+
+## Logistic Regression
+
+```{r}
+fit <- glm2(Failure~Temp, data = ca, family = "binomial")
+summary(fit)
+```
+
+### Fitted Probabilities
+
+```{r}
+ca$predicted <- predict(fit, type = "response")
+ca
+```
+
+We can always set threshold and see Sensitiviy ans Specificity
+
+## ROC Curve
+
+```{r}
+roccurve <- roc(ca$Failure~ca$predicted)
+plot.roc(roccurve, print.auc = TRUE, print.thres = "best", print.thres.best.method = "closest.topleft")
+```
+
+**Insights**
+
+* Best cut-off is `c = 0.218` which gives us Specificity of 0.529 and Sensitivity of 0.857.
+
+* Trade off between Specificity and Sensitivity
+
+* AUC is 0.723
+
+* Not always we choose the shoulder / "optimum" point. Depends on use case. If suicide, then want to find all true positive, maybe we want sensitivity (TPR) to be higher.
+
+
+# Cancer Data 
+
+```{r}
+ovarian <- read.csv("/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Tutorial codes/Tutorial3/ovarian.csv")
+ovarian
+```
+
+```{r}
+ggplot(data.frame(table(ovarian$popind)), aes(x=Var1, y=Freq, fill=Var1)) + geom_bar(stat="identity", position="dodge")
+```
+
+## Fit 4 Logistic Regression Models
+
+```{r}
+# fit logistic regression models
+fitfull <- glm2(popind~alb+tp+totscore, family = binomial, data = ovarian)
+fitalb <- glm2(popind~alb, family = binomial, data = ovarian)
+fittp <- glm2(popind~tp, family = binomial, data = ovarian)
+fitts <- glm2(popind~totscore, family = binomial, data = ovarian)
+
+# compute fitted probabilities
+fullpred <- predict(fitfull, type = "response")
+albpred <- predict(fitalb, type = "response")
+tppred <- predict(fittp, type = "response")
+tspred <- predict(fitts, type = "response")
+```
+
+## ROC Plot
+
+```{r}
+# generate ROC objects
+rocfull <- roc(ovarian$popind~fullpred)
+rocalb <- roc(ovarian$popind~albpred)
+roctp <- roc(ovarian$popind~tppred)
+rocts <- roc(ovarian$popind~tspred)
+
+# plot overlaid ROC curves with AUC
+plot.roc(rocfull)
+plot.roc(rocalb, add = TRUE, col='red')
+plot.roc(roctp, add = TRUE, col='blue')
+plot.roc(rocts, add = TRUE, col='green')
+lfull <- paste0("Full (",round(auc(rocfull),4),")")
+lalb <- paste0("alb (",round(auc(rocalb),4),")")
+ltp <- paste0("tp (",round(auc(roctp),4),")")
+lts <- paste0("totscore (",round(auc(rocts),4),")")
+legend("bottomright", legend=c(lfull, lalb, ltp, lts), 
+       col=c("black", "red", "blue", "green"), lwd=2)
+```
+
+* Is red (alb) or green (totscore) **significantly different** from the full model? If not, then we can consider picking them too.
+
+## ROC Test
+
+```{r}
+# Compare each model with full model using AUC tests
+albtest <- roc.test(rocalb,rocfull)
+tptest <- roc.test(roctp,rocfull)
+tstest <- roc.test(rocts,rocfull)
+Estimate = c(albtest$estimate[1]-albtest$estimate[2],
+             tptest$estimate[1]-tptest$estimate[2],
+             tstest$estimate[1]-tstest$estimate[2])
+p_value = c(albtest$p.value, tptest$p.value, tstest$p.value)
+tests <- data.frame(Estimate, p_value)
+row.names(tests) <- c("Albumin - Full Model", "Total Protein - Full Model",
+                      "K-G Score - Full Model")
+tests
+```
+
+* Turns out red and green is not statistically significant from Full Model
+
+* Can consider choosing them too
+
+# Q1: Poisson Regression
+
+* Often use log-link as the link function
+
+```{r}
+# Create AIDS deaths dataset
+death <- data.frame(x = 1:14,
+                    y = c(0,1,2,3,1,4,9,18,23,31,20,25,37,45))
+
+death
+```
+
+```{r}
+death %>%
+  keep(is.numeric) %>%                     # Keep only numeric columns
+  gather() %>%                             # Convert to key-value pairs
+  ggplot(aes(value)) +                     # Plot the values
+    facet_wrap(~ key, scales = "free") +   # In separate panels
+    geom_density()                         # as density
+```
+
+```{r}
+glue("Mean: {mean(death$y)}, SD: {sd(death$y)}")
+```
+
+* Seems like $\mu$ and $\sigma^2$ are almost the same. So we can use Poisson Regression 
+
+
+## Q1(a)
+
+```{r}
+fit1a.1 <- glm2(y~x, data = death, family = "poisson"(link="log"))
+summary(fit1a.1)
+```
+
+```{r}
+fit1a.2 <- glm2(y~log(x), data = death, family = "poisson"(link="log"))
+summary(fit1a.2)
+```
+
+### Model (i) and (ii) Comparison
+
+```{r}
+loglikelihood <- c(logLik(fit1a.1), logLik(fit1a.2))
+AIC <- c(aic(fit1a.1), aic(fit1a.2))
+BIC <- c(bic(fit1a.1), bic(fit1a.2))
+dispersion <- c(fit1a.1$deviance/fit1a.1$df.residual,
+                fit1a.2$deviance/fit1a.2$df.residual)
+gof.1a <- cbind(loglikelihood, AIC, BIC, dispersion)
+row.names(gof.1a) <- c("Model (i)", "Model (ii)")
+gof.1a
+```
+
+* Based on the comparison above, Model (ii) is better with lower log likelihood, AIC, BIC, and dispersion
+
+## Q2(b)
+
+* Get the estimated mu, $\hat{\mu} = exp(\alpha + \beta(log(x)))$
+
+```{r}
+mu <- exp(-1.9442 + 2.1748*log(6)) ; mu
+```
+
+```{r}
+# P(Y <= 5 | X = 6)
+# Calculate estimated probability using Poisson cdf
+ppois(5, lambda = mu)
+```
+
+# Horse Shoe Crab Data
+
+```{r}
+# Read Horseshoe Crabs dataset
+crab <- read.csv(file = "/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Tutorial codes/Tutorial3/crab.csv", header = TRUE)
+
+crab
+```
+
+```{r}
+crab %>%
+  keep(is.numeric) %>%                     # Keep only numeric columns
+  gather() %>%                             # Convert to key-value pairs
+  ggplot(aes(value)) +                     # Plot the values
+    facet_wrap(~ key, scales = "free") +   # In separate panels
+    geom_density()   
+```
+
+```{r}
+glue("Mean: {mean(crab$N)}, SD: {sd(crab$N)}")
+```
+
+## Using `glmulti` to fit all possible combinations
+
+```{r}
+# Alternative - use glmulti function to fit all subset models
+fit2a <- glmulti(N ~ T + C + W, family = poisson, 
+                level = 1, method = "h", data = crab, crit = "aic")
+```
+
+```{r}
+print(fit2a)
+weightable(fit2a)
+```
+
+```{r}
+fit2a@objects[[1]]
+```
+
+* Hence, best model is $log(\hat{\mu}) = -0.4282 + 0.5892W$
+
+```{r}
+glue("for 1 increase in unit of W, there is a {round(exp(0.5892) -1 , 3)} increase in the mean satelitties ")
+```
+
+
+## Using `glm2`
+
+```{r}
+model <- c("N ~ T", 
+           "N ~ C", 
+           "N ~ W",
+           "N ~ T + C",
+           "N ~ T + W",
+           "N ~ C + W",
+           "N ~ T + C + W")
+
+loglikelihood = AIC = BIC = deviance = dispersion = NULL
+fit <- vector(mode = "list", length = length(model))
+for (i in 1:length(model)) {
+   fit[[i]] <- glm2(model[i], family = poisson, data = crab)
+   loglikelihood <- c(loglikelihood, logLik(fit[[i]]))
+   AIC <- c(AIC, aic(fit[[i]]))
+   BIC <- c(BIC, bic(fit[[i]]))
+   deviance <- c(deviance, fit[[i]]$deviance)
+   dispersion <- c(dispersion, fit[[i]]$deviance/fit[[i]]$df.residual)
+}
+
+gof.2a <- cbind(loglikelihood, AIC, BIC, deviance, dispersion)
+row.names(gof.2a) <- model
+gof.2a <- data.frame(gof.2a)
+```
+
+```{r}
+round(gof.2a[order(gof.2a$AIC), ], 2)
+```
+
+```{r}
+fit[[3]]
+```
+
+
+* Same result as the first
+
+### Likelihood Ratio Test using `lrtest`
+
+```{r}
+# Compare selected model to full model by LR test
+lrtest(fit[[3]],fit[[7]])
+```
+
+* Insignificant difference is log-likelihood. Hence choose N ~ W
+
