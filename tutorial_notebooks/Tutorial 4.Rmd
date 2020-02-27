@@ -1,0 +1,123 @@
+---
+title: "Tutorial 4"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+
+```{r}
+library(glmulti)
+library(glm2)
+library(magrittr)
+library(tidyverse)
+library(dplyr)
+library(lmtest)
+library(MASS)
+library(glue)
+```
+
+# Resistivity Data
+
+Using the resistivity dataset , fit a GLIM with the gamma distribution and the log link, with second order interactions.
+
+```{r}
+resd <- read.csv("/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/data/resistivity.csv")
+
+resd
+```
+
+## Fit Gamma GLIM with Interactions (Full Model)
+
+```{r}
+full <- glm2(resistivity~(x1+x2+x3+x4)*(x1+x2+x3+x4), family = Gamma(link = "log"), data = resd)
+
+summary(full)
+```
+
+### Find the MLE of Dispersion Parameter
+
+```{r}
+summary.full <- summary(full, dispersion = gamma.dispersion(full))
+summary.full
+```
+
+### Full Model Scaled Deviance
+
+```{r}
+scaled_dev_full <- summary.full$deviance /  gamma.dispersion(full) 
+scaled_dev_full
+```
+
+## Reduced Model using `glmulti`
+
+Find the best sub models of the full model using `glmulti`.
+
+```{r}
+all <- glmulti(resistivity~x1+x2+x3+x4, data = resd, family=Gamma(link = "log"), level = 2, method = "h", crit = "aic")
+all
+```
+
+```{r}
+weightable(all)
+```
+
+
+```{r}
+all@formulas[[1]]
+```
+
+### Fit the Best Reduced Model
+
+```{r}
+reduce <- glm2(resistivity ~ 1 + x1 + x2 + x3 + x4 + x3:x1 + x3:x2 + x4:x3, family = Gamma(link = "log"), data = resd)
+
+summary.reduce <- summary(reduce, dispersion = gamma.dispersion(reduce))
+summary.reduce
+```
+
+### Reduced Model Scaled Deviance
+
+```{r}
+scaled_dev_reduced <- summary.reduce$deviance / gamma.dispersion(reduce)
+scaled_dev_reduced
+```
+
+## LR Test to Determine if Reduced Model Acceptable
+
+Is reduced significantly worse?
+
+```{r}
+LRT <- scaled_dev_reduced - scaled_dev_full
+DF <- reduce$df.residual - full$df.residual
+pvalue <- pchisq(LRT, DF, lower.tail = FALSE)
+pvalue
+```
+
+Hi p-value indicates is not significantly worse.
+
+### Prediction
+
+Based on the selected model, predict the resistivity when x1 and x2 are turned low while x3 and x4 are turned high.
+
+In short, `x1, x2 = -1` and `x3, x4 = 1`
+
+```{r}
+reduce
+```
+
+Reduce model is as follow:
+
+$$log(\hat{\mu}) =5.41422 + 0.06127x1 - 0.14957x2 + 0.08994x3     -0.02780x4 -0.03887x1x3 - 0.04407x2x3 - 0.04549x3x4$$
+
+```{r}
+log_mu <- predict(reduce,newdata=data.frame(x1=-1,x2=-1,x3=1,x4=1))
+mu <- predict(reduce,newdata=data.frame(x1=-1,x2=-1,x3=1,x4=1),type="response")
+
+glue("Log mu is {log_mu}")
+glue("Mu is {mu}")
+```
+
+
