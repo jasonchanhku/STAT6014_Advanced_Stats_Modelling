@@ -1,0 +1,392 @@
+---
+title: "Chapter 3"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r, warning=FALSE, message=FALSE}
+library(HH)
+library(nlme)
+library(dplyr)
+library(lmtest)
+library(lme4)
+library(ggplot2)
+```
+
+# Kukupa Dataset
+
+```{r}
+kukupa <- read.csv("/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/data/kukupa.csv")
+
+kukupa$station <- as.factor(kukupa$station)
+kukupa$year <- kukupa$year - 6.5
+
+str(kukupa)
+```
+
+* balanced data, equal number of observations ($n_i = 12$) for each of the 10 stations
+
+* longitudinal data, recorded over time
+
+## Multiple Linear Regression
+
+* First attempt is normal to try MLR
+* 10 models, one for each station
+* Use reference coding
+
+```{r}
+ancovaplot(acount~year*station, data = kukupa, pch = 16,
+           layout = c(3,4)) +
+layer(panel.ablineq(lm(y ~ x), rot = TRUE, at = 0.5, pos = 3))
+```
+
+* Kukupa numbers are **increasing over time** at most observation stations
+
+* Subtantial variability among stations, especially their slopes
+
+### Problems
+
+* Time series data, dependent over time. MLR assume all random errors are independent
+
+* The 10 regressions are only relevant for each selected station but not the **entire study area**
+
+### Solution
+
+* Treat the 10 stations are a random sample from the whole area
+
+* Introduce some random effects for intercept and slope for each station
+
+For each station $i$ and each year $x_j$:
+
+$$y_{ij} = \beta_0 + \beta_1x_j + (a_i+b_ix_j) + \epsilon_{ij}$$
+
+where $\beta_0, \beta_1$ are fixed effects, $a_i, b_i$ are random effects
+
+## Linear Mixed Effect Model (LME)
+
+```{r}
+fit <- lme(acount~year, data = kukupa, random = ~year|station)
+fit
+```
+
+### Interpretation
+
+Population average regression line
+
+* $E(y)=0.44201167 + 0.05246734x$
+
+* $\hat{\sigma}_a = 0.11318894$
+
+* $\hat{\sigma}_b = 0.02610594$
+
+* $\hat{\sigma}_e = 0.28411156$
+
+* $\hat{\rho}_{ab} = 0.52$
+
+* A high $\hat{\sigma}_a$ mean large variation in intercepts of all stations
+
+* A high $\hat{\sigma}_b$ mean large variation in slopes of all stations
+
+## Model Comparison
+
+* **Model 1**: No random effects with AR(1) errors
+
+* **Model 2**: Random intercepts with independent errors
+
+* **Model 3**: Random slopes with independent errors
+
+* **Model 4**: Independent intercept and slope with independent errors
+
+* **Model 5**: Correlated intercept and slope with independent errors
+
+### Model 1
+
+No random effects with AR(1) errors
+
+$$y_i = X_i\beta+ \epsilon_i, \epsilon_i \sim AR(1)$$
+
+* use `gls()` instead of `lme()` as no random effects
+
+```{r}
+# Fit linear mixed effects model (Model 1),
+# with no random effects, and AR(1) errors
+fit1 <- gls(acount~year, data = kukupa, 
+            correlation = corAR1(form = ~1|station))
+fit1
+```
+
+### Model 2
+
+Random intercepts with independent errors
+
+$$y_i = X_i\beta+Z_ib_i + \epsilon_i$$
+
+$$b_i=(a_i, 0)', S_i=\sigma^2_eI_n$$
+
+```{r}
+# Fit linear mixed effects model (Model 2),
+# with random intercept and fixed slope for each station
+fit2 <- lme(acount~year, data = kukupa, random = ~1|station)
+fit2
+
+```
+
+### Model 3
+
+Random slopes with independent errors
+
+$$y_i = X_iB_i + Z_ib_i + \epsilon_i$$
+
+$$b_i=(0, b_i)', S_i=\sigma^2_eI_n$$
+
+```{r}
+# Fit linear mixed effects model (Model 3),
+# with fixed intercept and random slope for each station
+fit3 <- lme(acount~year, data = kukupa, random = ~0+year|station)
+fit3
+```
+
+### Model 4
+
+Independent intercept and slope with independent errors
+
+$$y_i = X_iB_i + Z_ib_i + \epsilon_i$$
+
+$$D_i = \begin{pmatrix}
+\sigma^2_a & 0 \\
+0 & \sigma^2_b 
+\end{pmatrix}$$
+
+$$S_i=\sigma^2_eI_n$$
+
+* use of `pdDiag()` to indicate independent random slopes and intercept
+
+```{r}
+# Fit linear mixed effects model (Model 4),
+# with independent random intercept slope for each station
+fit4 <- lme(acount~year, data = kukupa, 
+            random = list(station = pdDiag(~year)))
+fit4
+```
+
+### Mdoel 5 (Full Model)
+
+Correlated intercept and slope with independent errors
+
+$$y_i = X_iB_i + Z_ib_i + \epsilon_i$$
+
+$$D_i = \begin{pmatrix}
+\sigma^2_a & \sigma^2_{ab}  \\
+\sigma^2_{ab} & \sigma^2_b 
+\end{pmatrix}$$
+
+
+$$S_i=\sigma^2_eI_n$$
+
+
+```{r}
+# Fit linear mixed effects model (Model5),
+# with correlated random intercept and slope for each station
+fit5 <- lme(acount~year, data = kukupa, random = ~year|station)
+fit5
+```
+
+## AIC Comparison
+
+```{r}
+
+comp <- data.frame(model1=AIC(fit1), model2=AIC(fit2),model3=AIC(fit3), model4=AIC(fit4), model5=AIC(fit5))
+
+data.frame(t(comp))
+```
+
+* Model 4 is the best here
+
+## LR Test
+
+* Model 4 vs model 5
+
+```{r}
+lrtest(fit5, fit4)
+```
+
+* Model 4 is not significantly worse than 5 in terms of LR
+
+## Significance Test for Fixed Effects
+
+* Use maximum likelihood (ML) as estimation method
+
+* Doesn't eliminate the fixed effects unlike the restricted LRT
+
+* Restricted LRT must have the same fixed effects
+
+* For GLMM, tests for fixed effects is often not primary interest, when random effects are present
+
+```{r}
+# Fit linear mixed effects model (Final Model) using ML,
+# and then perform LRT on fixed effect of year
+finalML <- lme(acount~year, data = kukupa, method = 'ML',
+             random = list(station = pdDiag(~year)))
+drop1(finalML, test="Chisq")
+```
+
+# Epileptic Seizure Data
+
+Demonstrating Generalized Linear Mixed Models (GLIMM)
+
+```{r}
+epilepsy <- read.csv("/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/data/epilepsy.csv")
+
+epilepsy$patient <- as.factor(epilepsy$patient)
+epilepsy$lage <- log(epilepsy$age)
+epilepsy$lbase <- log(epilepsy$baseline/4)
+
+epilepsy
+```
+
+* Fixed effects: `treat, period, lage, lbase`
+
+* Random effects: intercept, (slope for) `period`
+
+* Subject for data cluster: `patient` (random sample)
+
+* Four potential GLIMMs are fitted using Laplace approximation, and Poisson response distribution with `log-link`:
+
+  * Model 1: Random intercepts
+  * Model 2: Random slopes
+  * Model 3: Independent random intercepts and slopes
+  * Model 4: Correlated random intercepts and slopes
+
+## Model Comparison
+
+### Model 1: Random intercepts
+
+```{r}
+fit1 <- glmer(seizure~treat+period+lage+lbase+(1|patient), data=epilepsy, family = "poisson")
+summary(fit1)
+```
+
+### Model 2: Random Slopes (no intercept)
+
+```{r}
+fit2 <- glmer(seizure~treat+period+lage+lbase+(period-1|patient), data=epilepsy, family = "poisson")
+summary(fit2)
+```
+
+### Model 3: Independent random intercepts and slopes `(||)`
+
+```{r}
+fit3 <- glmer(seizure~treat+period+lage+lbase+(1+period||patient), data=epilepsy, family = "poisson")
+summary(fit3)
+```
+
+
+### Model 4: Correlated random intercepts and slopes (full model)
+
+```{r}
+fit4 <- glmer(seizure~treat+period+lage+lbase+(1+period|patient), data=epilepsy, family = "poisson")
+summary(fit4)
+```
+
+* $\hat\sigma_a=0.6244$
+* $\hat\sigma_b=0.1405$
+* $\hat\rho=-0.66$
+
+
+## Comparing AIC
+
+```{r}
+data.frame("model1"=AIC(fit1), "model2"=AIC(fit2), "model3"=AIC(fit3), "model4"=AIC(fit4))
+```
+
+* Model 4 fits the best according to the AIC
+
+## Interpreting Coefficients
+
+```{r}
+fixef(fit4)
+```
+
+Since we are using Poisson with loglink,
+
+$$\hat\mu_{drug}=exp(-0.803-0.297-0.054period+0.319lage+0.916lbase)$$
+$$\hat\mu_{placebo}=exp(-0.803-0.054period+0.319lage+0.916lbase)$$
+$$\frac{\hat\mu_{drug}}{\hat\mu_{placebo}}=exp(-0.297)=0.743$$
+
+* This implies for subjects with same age and baseline seizures, those on the drugs have on average **25.7% less seizures**
+
+
+Similarly:
+
+$$\frac{\hat\mu_{period(t+1)}}{\hat\mu_{period(t)}}=exp(-0.054)=0.947$$
+
+* Holding age, baseline seizures, and treatment group the same, the average number of seizures reduces 5.3% every period
+
+* note that it is insignificant `p-val=0.1089`
+
+
+## LR Test
+
+Compare Model 3 and Model 4 in the `lrtest`. We are testing:
+
+$$H_0:\sigma_{a,b}=0$$
+
+$$H_1:\sigma_{a,b}\neq0$$
+
+```{r}
+lrtest(fit3, fit4)
+```
+
+* Model 3 is significantly worse and correlation cant be ignored.
+
+## Plotting Effects
+
+### Percent Change with Period Boxplot
+
+```{r}
+# Construct boxplots of percent delcines for patients in each treatment group
+spec.treat <- unique(subset(epilepsy[order(epilepsy$patient),],
+                            select=c("patient","treat")))
+peff <- coef(fit4)$patient
+spec.effect <- data.frame(rownames(peff),spec.treat$treat,
+                          100*(exp(peff$period)-1))
+colnames(spec.effect) <- c("patient","treat","change")
+spec.effect$treat <- as.factor(spec.effect$treat)
+bp <- ggplot(spec.effect, aes(treat,change))+
+             geom_boxplot(outlier.color = "Red") + coord_flip()
+print(bp + labs(title = "Average percent change from period t to period (t+1)", 
+                x = "Treatment Group", y ="Percent change every two weeks"))
+```
+
+For majority patients in both treatment groups, the percent change ranges from a little over a 15% decline to just under a 10% increase in seizures every 2 weeks.
+
+
+### Deviance Residual Plots
+
+```{r}
+# Construct residual plots
+fv <- fitted(fit4)
+resid <- residuals(fit4)
+layout(matrix(1:4,c(2,2), byrow = TRUE))
+
+# Histogram of Residuals
+hist(resid, xlab = "Residuals", prob = TRUE, col = "grey", main = NULL)
+curve(dnorm(x, mean = mean(resid), sd = sqrt(var(resid))), add = TRUE,
+      col = "darkblue", lwd = 2)
+
+# Boxplot of residuals
+boxplot(resid, col = "grey", ylab = "Residuals")
+
+# Q-Q plot of residuals
+qqnorm(resid, ylab = "Residuals", pch = 20, main = NULL)
+qqline(resid)
+
+# Residuals vs fitted values
+plot(fv, resid, pch = 20, xlab = "Fitted Values", ylab = "Residuals")
+```
+
+No violation of the assumed log-link and normality on pseudo-responses
+
