@@ -1,0 +1,172 @@
+---
+title: "Tutorial 6"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r, message=FALSE}
+library(HH)
+library(nlme)
+library(dplyr)
+library(lmtest)
+library(lme4)
+library(glm2)
+library(ggplot2)
+```
+
+# Awards Data
+
+Demonstrating Multilevel Model
+
+* Classes intoduce randomness
+
+
+```{r}
+awd <- read.csv("/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Tutorial codes/Tutorial 6/awards.csv")
+
+awd$school <- as.factor(awd$school)
+awd$class <- as.factor(awd$class)
+
+awd
+```
+
+## Part (a)
+
+```{r}
+fitpr <- glm2(award~exam+trt, data = awd, family = "poisson")
+
+summary(fitpr)
+```
+
+```{r}
+772.90 / 317
+```
+
+Shows that it underfits the data. Consider mixed effects.
+
+## Part (b)
+
+Fit Mixed Poisson regression model, with
+  * fixed effects: trt, exam
+  * random effects: independent intercept and slope of trt within class and school
+  
+Fitted model is hence
+
+$$log(\hat\mu_{ijk}) = \beta_0+\beta_1t_{ij}+\beta_2x_{ijk}+a_i+b_it_{ij}+c_{ij}+d_{ij}t_{ij}$$
+
+* **Response**: $y_{ijk}$, award earned by the kth student from the jth class of the ith school
+
+* **School effects**: $a_i, b_i$, random intercept and slope of the ith school
+
+* **Class effects**: $c_{ij}, d_{ij}$, random intercept and slope of the jth class in the ith school
+
+
+```{r}
+fit1 <- glmer(award~exam+trt+(1+trt||school/class), data = awd, family = "poisson")
+
+summary(fit1)
+```
+
+Fitted model is:
+
+$$log(\hat\mu_{ijk}) = -1.36 + 0.93t{ij} + 0.019x_{ijk} + a_i+b_it_{ij}+c_{ij}+d_{ij}t_{ij} $$
+
+Variance components of class effects:
+
+* $\sigma_c = 0.68$
+* $\sigma_d = 6.313\times10^{-5}$
+
+Variance components of school effects:
+
+* $\sigma_a = 0.50$
+* $\sigma_b = 4.36\times10^{-5}$
+
+
+## Part (c)
+
+### Remove Treatment Effects
+
+The small variances of $\sigma_b$ and $\sigma_d$ indicates that the treatment effects within class and school can be removed
+
+```{r}
+# Fit Mixed Poisson regression model, with
+# fixed effects: trt, exam
+# random effects: random intercepts within class and school
+fit2 <- glmer(award ~ trt + exam + (1 | school/class),
+             family = poisson, data = awd)
+summary(fit2)
+```
+
+The model fitted is now
+
+$$log(\hat\mu_{ijk})=-1.36+0.93t_{ij}+0.019x_{ijk}+a_i+c_{ij}$$
+
+There is almost no change in parameter estimates
+
+
+### Random intercept only for class within school 
+
+```{r}
+fit3 <- glmer(award ~ trt + exam + (1 | school:class),
+             family = poisson, data = awd)
+summary(fit3)
+```
+
+Fitted model is now:
+
+$$log(\mu_{ijk}) = -1.31+0.83t_{ij}+0.019x_{ijk}+ c_{ij}$$
+
+```{r}
+lrtest(fit2, fit3)
+```
+
+```{r}
+# adjusted p-value due to boundary issue
+0.5*0.0357
+```
+
+* Less than 0.05 which means the school effects intercept is significant
+
+* The number of awards earned by students are significantly differently among schools.
+
+
+## Part (d)
+
+```{r}
+fixed.effects(fit2)
+```
+
+$$log(\hat\mu_{ijk})=-1.36+0.93t_{ij}+0.019x_{ijk}+a_i+c_{ij}$$
+
+```{r}
+exp(c(0.93018057, 0.01890311))
+```
+
+* on average, students attending ”flipped classroom” are expected to earn 153.5% more awards than students attending traditional classes and with same exam performance
+
+* on average, students with **1 more exam score** are expected to earn 1.9% more awards for the same teaching method.
+
+
+## Part (e)
+
+for a student from class 6 (trt = 1) in school 2 with exam score 82.7, what is the expected number of awards earned?
+
+```{r}
+coef(fit2)$`class:school`[6, ]
+```
+
+$$\hat\mu=exp(-1.592174+0.9301806+0.01890311\times82.7)=2.462$$
+
+## Part (f)
+
+For a student in school 2 attended ”flipped classroom” with exam score 82.7, what is the expected number of awards earned?
+
+```{r}
+coef(fit2)$school[2, ]
+```
+
+$$\hat\mu = exp(-0.6434734+0.9301806+0.01890311\times82.7)=6.358$$
+
