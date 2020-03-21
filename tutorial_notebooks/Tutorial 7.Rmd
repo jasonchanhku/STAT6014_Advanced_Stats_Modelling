@@ -1,0 +1,96 @@
+---
+title: "Tutorial 7"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Library
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(tidyverse)
+```
+
+# Question 2
+
+Generate 1000 random numbers from a mixture distribution: 30% chance from N(0, 1), 40% chance from N(3, 9), 30% chance from $\chi^2_{20}$
+
+## Part (a)
+
+```{r}
+set.seed(0423)
+n <- 1000
+probs <- runif(n)
+x <- rnorm(n = 1000, mean = 3, sd = 3)
+x[probs < 0.3] <- rnorm(sum(probs<0.3), mean=0, sd=1)
+x[probs > 0.7] <- rchisq(sum(probs>0.7), df=20)
+```
+
+
+```{r}
+## Q2.a - Calculate summary statistics and construct histogram
+summary(x)
+
+```
+
+## Part (b)
+
+```{r}
+## Q2.b - Compute kernel density estimate,
+# using gaussian kernel, different bandwidth selectors
+hist(x, breaks = seq(-8, 52, 1), col = "grey", freq = FALSE,
+     main = "Histogram of Simulated Data", xlab = "x")
+kde.srot <- density(x, bw = "nrd")     
+kde.sjpi <- density(x, bw = "sj-ste")  
+kde.ucv <- density(x, bw = "ucv")
+
+# Add kdes to histogram
+lines(kde.srot, col = "green", lwd = 2)
+lines(kde.sjpi, col = "blue", lwd = 2)
+lines(kde.ucv, col = "red", lwd = 2)
+legend("topright",
+       legend = c("SROT", "SJPI", "LSCV"),
+       col = c("green", "blue", "red"),
+       bty = "n", lty = 1, lwd = 2)
+```
+
+## Part (c)
+
+```{r}
+f <- function(x) {
+   0.3*dnorm(x,0,1)+0.4*dnorm(x,3,3)+0.3*dchisq(x,20)
+}
+```
+
+```{r}
+# Turn computed kdes into functions by interpolation
+kde.srot.f <- approxfun(kde.srot$x, kde.srot$y)
+kde.sjpi.f <- approxfun(kde.sjpi$x, kde.sjpi$y)
+kde.ucv.f <- approxfun(kde.ucv$x, kde.ucv$y)
+```
+
+```{r}
+# Compare kdes to true density at at x = 10, 20, 30
+testdata <- c(10, 20, 30)
+f(testdata)
+kde.srot.f(testdata)
+kde.sjpi.f(testdata)
+kde.ucv.f(testdata)
+```
+
+
+```{r}
+# True cdf of the mixture distribution
+F <- function(x) {
+   0.3*pnorm(x,0,1)+0.4*pnorm(x,3,3)+0.3*pchisq(x,20)
+}
+
+# Compare estimated cdf and true cdf for x in (0,10)
+F(10)-F(0)
+integrate(kde.srot.f, lower = 0, upper = 10)
+integrate(kde.sjpi.f, lower = 0, upper = 10)
+integrate(kde.ucv.f, lower = 0, upper = 10)
+```
+
