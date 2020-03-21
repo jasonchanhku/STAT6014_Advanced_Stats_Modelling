@@ -1,0 +1,360 @@
+---
+title: "Chapter 4"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r, message=FALSE}
+library(magrittr)
+library(dplyr)
+library(tidyverse)
+library(patchwork)
+library(ks)
+```
+
+# HSI Dataset
+
+```{r}
+hsi <-read.csv(file="/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/data/HSI.csv", header=TRUE,sep=",")
+```
+
+* Bandwidth multiplier, `c=1`
+
+```{r}
+# Compute kernel density estimates,
+# using Quadratic kernel, default bandwidth
+kde1 <- density(hsi$Return, kernel = "epanechnikov")
+
+# Construct histogram with binwidth 0.04
+hist(hsi$Return, breaks = seq(-0.6, 0.8, 0.04), col = "grey", freq = FALSE,
+     main = "Histogram of HSI Returns c = 1", xlab = "HSI Return")
+# Add kde to histogram
+lines(kde1, col = "blue", lwd = 2)
+```
+
+```{r}
+kde1
+```
+
+* Compare `x` to the density estimates
+
+## Reduce Bandwidth by half `adjust=0.5`
+
+* `h=c\timesbw` 
+
+```{r}
+# Compute kernel density estimates,
+# using Quadratic kernel, half default bandwidth
+kde2 <- density(hsi$Return, adjust = 0.5, kernel = "epanechnikov")
+hist(hsi$Return, breaks = seq(-0.6, 0.8, 0.04), ylim = c(0,7), col = "grey", 
+     freq = FALSE, main = "Histogram of HSI Returns, c = 0.5", xlab = "HSI Return")
+lines(kde2, col = "blue", lwd = 2)
+```
+
+
+## Doubling the bandwidth
+
+```{r}
+# Compute kernel density estimates,
+# using Quadratic kernel, double default bandwidth
+kde3 <- density(hsi$Return, adjust = 2, kernel = "epanechnikov")
+hist(hsi$Return, breaks = seq(-0.6, 0.8, 0.04), col = "grey", freq = FALSE, 
+     main = "Histogram of HSI Returns,c = 2", xlab = "HSI Return")
+lines(kde3, col = "blue", lwd = 2)
+```
+
+* `h` and `c` controls the smoothness of the density estimate
+
+* Also known as the smoothing parameter
+
+## Triangular Kernel
+
+```{r}
+# Compute kernel density estimates,
+# using Trangular kernel, default bandwidth
+kde4 <- density(hsi$Return, kernel = "triangular")
+hist(hsi$Return, breaks = seq(-0.6, 0.8, 0.04), col = "grey", freq = FALSE, 
+     main = "Histogram of HSI Returns", xlab = "HSI Return")
+lines(kde4, col = "blue", lwd = 2)
+```
+
+## Gaussian Kernel
+
+```{r}
+# Compute kernel density estimates,
+# using Gaussian kernel, default bandwidth
+kde5 <- density(hsi$Return, kernel = "gaussian")
+hist(hsi$Return, breaks = seq(-0.6, 0.8, 0.04), col = "grey", freq = FALSE, 
+     main = "Histogram of HSI Returns", xlab = "HSI Return")
+lines(kde5, col = "blue", lwd = 2)
+```
+
+* It seems kernel choice is not that sensitive / crucial compared to **choice of bandwidth**
+
+* Hard to distinguish visually
+
+
+# Channel Length Data
+
+* Multimodal distribution
+
+```{r}
+# Read Channel Length data
+cld <-read.csv(file="/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/data/channellength.csv", header=TRUE,sep=",")
+```
+
+## Triangular Kernel
+
+```{r}
+# Compute kernel density estimates,
+# using different kernels, optimal bandwidth 
+tkde <- density(cld$length, bw = "SJ-ste", kernel = "triangular")
+ekde <- density(cld$length, bw = "SJ-ste", kernel = "epanechnikov")
+gkde <- density(cld$length, bw = "SJ-ste", kernel = "gaussian")
+```
+
+
+```{r}
+# Construct histogram fitted with kdes
+hist(cld$length, breaks = seq(0, 3, 0.1), ylim = c(0,1.25), col = "grey", 
+     freq = FALSE, main = "Distribution of Channel Lengths", xlab = "Length")
+lines(tkde, col = "blue", lwd = 2)
+```
+
+## Epanechnikov Kernel
+
+```{r}
+hist(cld$length, breaks = seq(0, 3, 0.1), ylim = c(0,1.25), col = "grey", 
+     freq = FALSE, main = "Distribution of Channel Lengths", xlab = "Length")
+lines(ekde, col = "blue", lwd = 2)
+```
+
+## Gaussian Kernel
+
+```{r}
+hist(cld$length, breaks = seq(0, 3, 0.1), ylim = c(0,1.25), col = "grey", 
+     freq = FALSE, main = "Distribution of Channel Lengths", xlab = "Length")
+lines(gkde, col = "blue", lwd = 2)
+```
+
+
+## Gaussian and SJPI `bw` Estimation
+
+```{r}
+# Compute and plot kernel density estimates,
+# using gaussian kernel, optimal bandwidth selected by SJPI
+kde <- density(cld$length, bw = "SJ-ste", kernel = "gaussian")
+plot(kde, col = "blue", lwd = 2, xlab = "Length",
+     main = "Kernel Density Estimation for Channel Lengths")
+```
+
+## Computing Estimates
+
+```{r}
+# Turn computed kde into a function by interpolation
+f <- approxfun(kde$x, kde$y)
+
+# Compute kde at x = 0.6, 1.7, 2.3
+f(c(0.6, 1.7, 2.3))
+
+```
+
+```{r}
+# Integrate kde from 1.0 to 2.0
+integrate(f, lower = 1, upper = 2)
+```
+
+## Different `bw` Selection Methods
+
+```{r}
+# Compute kernel density estimates,
+# using gaussian kernel, different bandwidth selectors
+kde.snr <- density(cld$length, bw = "nrd0")
+kde.srot <- density(cld$length, bw = "nrd")
+kde.sjpi <- density(cld$length, bw = "sj-ste")
+kde.ucv <- density(cld$length, bw = "ucv")
+```
+
+### SNR
+
+```{r}
+# Construct histogram fitted with kdes
+hist(cld$length, breaks = seq(0, 3, 0.1), ylim = c(0, 1.25), col = "grey", 
+     freq = FALSE, main = "KDE (SNR) for Channel Lengths", xlab = "Length")
+lines(kde.snr, col = "blue", lwd = 2)
+```
+
+### SROT
+
+```{r}
+hist(cld$length, breaks = seq(0, 3, 0.1), ylim = c(0,1.25), col = "grey", 
+     freq = FALSE, main = "KDE (SROT) for Channel Lengths", xlab = "Length")
+lines(kde.srot, col = "blue", lwd = 2)
+```
+
+### SJPI
+
+```{r}
+hist(cld$length, breaks = seq(0, 3, 0.1), ylim = c(0,1.25), col = "grey", 
+     freq = FALSE, main = "KDE (SJPI) for Channel Lengths", xlab = "Length")
+lines(kde.sjpi, col = "blue", lwd = 2)
+```
+
+### UCV
+
+```{r}
+hist(cld$length, breaks = seq(0, 3, 0.1), ylim = c(0,1.25), col = "grey", 
+     freq = FALSE, main = "KDE (UCV) for Channel Lengths", xlab = "Length")
+lines(kde.ucv, col = "blue", lwd = 2)
+```
+
+* Seems like `SJPI` and `UCV` captures multimodal quite well without oversmoothing
+
+## Confidence Interval
+
+* with `give.Rkern = TRUE`, only returns the R(K) and not fit the KDE
+* CI is dont point wise, point by point
+
+```{r}
+RK <- density(cld$length, kernel = "gaussian", give.Rkern = TRUE)
+kde <- density(cld$length, kernel = "gaussian")
+
+# se is not a scalar, is a vector
+se <- sqrt(kde$y * RK / (kde$n * kde$bw))
+alpha <- 0.05
+zalpha <- qnorm(1- alpha/2)
+
+ciL <- kde$y - zalpha * se
+ciU <- kde$y + zalpha * se
+
+```
+
+### C.I Plot
+```{r}
+plot(kde, ylim = range(ciU), col = "blue", lwd = 2, 
+     main = "Kernel Density Estimation for Channel Lengths")
+lines(kde$x, ciL, col = "gray", lwd = 2)
+lines(kde$x, ciU, col = "gray", lwd = 2)
+legend("topright", legend = c("Estimate", "95% CI"), 
+       col = c("blue", "gray"), lwd = 2)
+```
+
+### Boot Strap Confidence Bands
+
+* Resample based on quantiles
+
+```{r}
+# Construct confidence bands of kde by bootstrapping
+nrep <- 10000
+
+# Bootstrap starts
+bootkde <- replicate(nrep, 
+           {
+              # Draw bootstrap sample with replacement
+              res <- sample(cld$length, replace = TRUE)
+
+              # Compute KDE from resampled data and extract density estimates
+              # at same grid points as the original KDE
+              density(res, from = min(kde$x), to = max(kde$x), bw = "sj-ste")$y
+           })
+
+# Determine the (rowrise) rank of estimates # at each x-coordinate
+bootrank <- apply(bootkde, 1, rank)
+
+# Determine the smallest and largest ranks associated with each bootstrap estimate
+rank.min <- apply(bootrank, 1, min)
+rank.max <- apply(bootrank, 1, max)
+
+# Determine the percentiles of minimum rank and maximum rank
+alpha <- 0.05
+rankL <- quantile(rank.min, alpha/2)
+rankU <- quantile(rank.max, 1-alpha/2)
+
+# Determine the confidence bands
+# By construction, at most alpha/2 of the bootstrap estimates have 
+# a coordinate with value smaller(larger) than the lower(upper) limit
+bootci <- apply(bootkde, 1, quantile, c(rankL/nrep, rankU/nrep))
+
+# Create plot environment
+plot(kde, ylim = range(bootci), col = "blue", lwd = 2, 
+     main = "Kernel Density Estimation for Channel Lengths")
+
+# Draw the region for confidence bands
+polygon(c(kde$x, rev(kde$x)), c(bootci[1,], rev(bootci[2,])),
+        col='gray', density = -0.5, border = F)
+
+# Display the lines for KDE and pointwise confidence interval
+lines(kde, col = "blue", lwd = 2)
+lines(kde$x, ciL, col = "red", lwd = 2, lty = 3)
+lines(kde$x, ciU, col = "red", lwd = 2, lty = 3)
+legend("topright", legend = c("Estimate", "95% poinwise CI", "95% Simultaneous CI"),
+       col = c("blue", "red", "gray"), lty = c(1, 3, NA), lwd = 2, pch = c(NA, NA, 15))
+```
+
+
+# German Credit Scoring
+
+```{r}
+gcd <-read.csv(file="/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/data/german_credit.csv", header=TRUE,sep=",")
+x <- data.frame(gcd$Age, gcd$Duration)
+```
+
+## Multivariate KDE with diagonal bandwidth
+
+```{r}
+# Compute bivariate KDEs for (Age, Duration),
+# with independent normal reference bandwidth selector
+kde.snrd <- kde(x, H = Hns.diag(x))
+```
+
+```{r}
+kde.snrd$H
+```
+
+## Contour Plot
+
+* Peak is where the green is
+
+```{r}
+# Contour plot of bivariate KDE for (Age, Duration)
+plot(kde.snrd, display = "filled.contour", cont = seq(10, 90, by = 10),
+     col = rev(terrain.colors(10, alpha = 0.8)), xlim = c(15, 80), 
+     ylim = c(0, 75), main = "Kernel Density for Age and Duration", 
+     xlab = "Age", ylab = "Duration")
+```
+
+### Other Bandwidth Selections
+
+```{r}
+# Compute bivariate KDEs for (Age, Duration),
+# with different bandwidth selectors
+kde.snr <- kde(x, H = Hns(x))
+kde.sjpi <- kde(x, H = Hpi(x))
+kde.bcv <- kde(x, H = Hbcv(x))
+```
+
+```{r}
+layout(matrix(1:4,c(2,2), byrow = TRUE))
+plot(kde.snrd, display = "filled.contour", cont = seq(10, 90, by = 10),
+     col = rev(terrain.colors(10, alpha = 0.8)), xlim = c(15, 80), 
+     ylim = c(0, 75), main = "Kernel Density (SNRD)", 
+     xlab = "Age", ylab = "Duration")
+plot(kde.snr, display = "filled.contour", cont = seq(10, 90, by = 10),
+     col = rev(terrain.colors(10, alpha = 0.8)), xlim = c(15, 80), 
+     ylim = c(0, 75), main = "Kernel Density (SNR)", 
+     xlab = "Age", ylab = "Duration")
+plot(kde.sjpi, display = "filled.contour", cont = seq(10, 90, by = 10),
+     col = rev(terrain.colors(10, alpha = 0.8)), xlim = c(15, 80), 
+     ylim = c(0, 75), main = "Kernel Density (SJPI)", 
+     xlab = "Age", ylab = "Duration")
+plot(kde.bcv, display = "filled.contour", cont = seq(10, 90, by = 10),
+     col = rev(terrain.colors(10, alpha = 0.8)), xlim = c(15, 80), 
+     ylim = c(0, 75), main = "Kernel Density (BCV)", 
+     xlab = "Age", ylab = "Duration")
+```
+
+* SJPI can capture the bimodal property and detail
+* SNRD and SNR oversmoothing
