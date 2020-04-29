@@ -1,0 +1,189 @@
+---
+title: "Chapter 5"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(locfit)
+```
+
+
+```{r}
+lidar <- read.csv("~/MSTAT/STAT6014_Advanced_Stat_Model/Lecture codes/R codes and data for Chapter 5 examples-20200202/lidar.csv")
+
+head(lidar)
+```
+
+# Local Polynomial Regression (LIDAR)
+
+## Local Linear Regression, `degree=1`
+
+* smoothing parameter, $\alpha = 0.2$
+* 0.2 x 221 = 44 points , k = 44
+
+
+```{r}
+# Construct scatter plot for logratio vs range
+plot(lidar$range, lidar$logratio, xlab = "Range", ylab = "log(Ratio)", 
+     pch = 20, cex = 0.7, main="Loess with local linear regression")
+
+# Perform local linear fitting with smoothing parameter 0.2
+llfit <- loess(logratio~range, data = lidar, span = 0.2, degree = 1)
+
+# Plot the fitted curve
+lines(llfit$x, llfit$fitted, col = "blue", lwd=2)
+```
+
+
+### Predictions
+
+```{r}
+# Predictions at range = 500, 550, 600
+predict(llfit, newdata = c(500, 550, 600))
+```
+
+## Local Quadratic Regression, `degree=2`
+
+```{r}
+# Perform local quadratic fitting with smoothing parameter 0.2
+lqfit <- loess(logratio~range, data = lidar, span = 0.2, degree = 2)
+plot(lidar$range, lidar$logratio, xlab = "Range", ylab = "log(Ratio)", 
+     pch = 20, cex = 0.7, main = "LOESS with local quadratic regression")
+lines(lqfit$x, lqfit$fitted, col = "blue", lwd=2)
+```
+
+
+### Predictions
+
+```{r}
+# Predictions at range = 500, 550, 600
+predict(lqfit, newdata = c(500, 550, 600))
+```
+
+
+
+## Optimizing Smoothing Parameter, alpha
+
+* using either AIC or GCV
+
+
+### GCV
+
+```{r}
+lqs <- gcvplot(logratio~range, data = lidar, deg = 2,
+               alpha = seq(0.1, 0.9, by = 0.005))
+
+# Plot GCV vs smoothing parameter
+plot(lqs$alpha, lqs$values, main = "Smoothing parameter Selection GCV",
+     xlab = "Smoothing Parameter", ylab = "GCV", pch = 20, cex = 0.7)
+
+# Select smoothing parameter that minimizes GCV
+best <- lqs$alpha[which.min(lqs$values)]
+legend("topleft", paste0("Selected Smoothing Parameter = ",best))
+```
+
+### AIC
+
+```{r}
+lqs <- aicplot(logratio~range, data = lidar, deg = 2,
+               alpha = seq(0.1, 0.9, by = 0.005))
+
+# Plot GCV vs smoothing parameter
+plot(lqs$alpha, lqs$values, main = "Smoothing parameter Selection AIC",
+     xlab = "Smoothing Parameter", ylab = "GCV", pch = 20, cex = 0.7)
+
+# Select smoothing parameter that minimizes GCV
+best <- lqs$alpha[which.min(lqs$values)]
+legend("topleft", paste0("Selected Smoothing Parameter = ",best))
+```
+
+
+### Using Optimized Smoothing Parameter
+
+```{r}
+# Perform local quadratic fitting with selected smoothing parameter
+lqfit2 <- loess(logratio~range, data = lidar, span = 0.435, degree = 2)
+plot(lidar$range, lidar$logratio, xlab = "Range", ylab = "log(Ratio)", 
+     pch = 20, cex = 0.7, main = "LOESS with local quadratic using optimized alpha")
+lines(lqfit2$x, lqfit2$fitted, col = "blue", lwd=2)
+```
+
+## Diagnostic Plots
+
+
+```{r}
+# Construct residual plots
+fv <- lqfit2$fitted
+resid <- lqfit2$residuals
+layout(matrix(1:4,c(2,2), byrow = TRUE))
+# Histogram of Residuals
+hist(resid, xlab = "Residuals", prob = TRUE, col = "grey", main = NULL)
+curve(dnorm(x, mean = mean(resid), sd = sqrt(var(resid))), add = TRUE,
+      col = "darkblue", lwd = 2)
+
+# Boxplot of residuals
+boxplot(resid, col = "grey", ylab = "Residuals")
+
+# Q-Q plot of residuals
+qqnorm(resid, ylab = "Residuals", pch = 20, main = NULL)
+qqline(resid)
+
+# Residuals vs fitted values
+plot(fv, resid, pch = 20, xlab = "Fitted Values", ylab = "Residuals")
+```
+* Residual scatterplot shows higher range at lower values compared to higher values
+
+* Some transformation can stabilize it
+
+
+# Spline Regression (LIDAR)
+
+
+## Using Optimized Lambda from GCV
+
+```{r}
+# Fit smoothing spline regression with smoothing parameter 
+# selected based on GCV
+spfit <- smooth.spline(lidar$range, lidar$logratio, cv = FALSE)
+
+# Plot the fitted regression line
+plot(lidar$range, lidar$logratio, xlab = "Range", ylab = "log(Ratio)",
+     main = "Cubic smoothing spline fit for LIDAR data",
+     pch = 20, cex = 0.7)
+lines(spfit, col = "blue", lwd=2)
+legend("topright", paste0("lambda = ",round(spfit$lambda,6)))
+```
+
+## Varying Values of Lambda
+
+```{r}
+# Fit smoothing spline regression with different smoothing parameters
+spfit2 <- smooth.spline(lidar$range, lidar$logratio, lambda = 0.00001)
+spfit3 <- smooth.spline(lidar$range, lidar$logratio, lambda = 0.0007)
+spfit4 <- smooth.spline(lidar$range, lidar$logratio, lambda = 0.05)
+spfit5 <- smooth.spline(lidar$range, lidar$logratio, lambda = 3.5)
+layout(matrix(1:4,c(2,2), byrow = TRUE))
+plot(lidar$range, lidar$logratio, xlab = "Range", ylab = "log(Ratio)",
+     main = paste0("lambda = ", round(spfit2$lambda,6)),
+     pch = 20, cex = 0.7)
+lines(spfit2, col = "blue", lwd=2)
+plot(lidar$range, lidar$logratio, xlab = "Range", ylab = "log(Ratio)",
+     main = paste0("lambda = ", round(spfit3$lambda,6)),
+     pch = 20, cex = 0.7)
+lines(spfit3, col = "blue", lwd=2)
+plot(lidar$range, lidar$logratio, xlab = "Range", ylab = "log(Ratio)",
+     main = paste0("lambda = ", round(spfit4$lambda,6)),
+     pch = 20, cex = 0.7)
+lines(spfit4, col = "blue", lwd=2)
+plot(lidar$range, lidar$logratio, xlab = "Range", ylab = "log(Ratio)",
+     main = paste0("lambda = ", round(spfit5$lambda,6)),
+     pch = 20, cex = 0.7)
+lines(spfit5, col = "blue", lwd=2)
+```
+
