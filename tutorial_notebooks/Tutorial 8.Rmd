@@ -1,0 +1,187 @@
+---
+title: "Tutorial 8"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(ks)
+```
+
+# Question 1
+
+In the dataset octane.csv, different samples of super unleaded petrol at various petrol stations are rated for the level of octane (purity) by professional raters (Rater) and customers (Customer).
+
+```{r}
+# Read Octane data
+octane <-read.csv(file="/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Tutorial codes/Tutorial 8/octane.csv", header=TRUE,sep=",")
+
+head(octane)
+```
+
+## Part (a)
+
+Compute and plot the KDE for the variable Rater with confidence interval and confidence bands.
+
+### Confidence Interval
+
+![](/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Tutorial codes/Tutorial 8/ci.png)
+
+```{r}
+# Compute kernel density estimate for Rater
+# using gaussian kernel, optimal bandwidth selected by SJPI
+kde <- density(octane$Rater, bw = "SJ-ste", kernel = "gaussian")
+
+# Construct confidence intervals of kde 
+n <- kde$n
+h <- kde$bw
+RK <- density(octane$Rater, kernel = "gaussian", give.Rkern = TRUE)
+se <- sqrt(kde$y * RK / (n * h))
+alpha <- 0.05
+zalpha <- qnorm(1 - alpha/2)
+ciL <- kde$y - zalpha * se
+ciU <- kde$y + zalpha * se
+title <- paste0("Kernel Density Estimation for Octane Rating\n",
+         "N = ",n,"    Bandwidth = ",round(h,4))
+plot(kde, ylim = range(ciU), col = "blue", lwd = 2, 
+     main = title, xlab = "Raters")
+lines(kde$x, ciL, col = "gray", lwd = 2)
+lines(kde$x, ciU, col = "gray", lwd = 2)
+legend("topright", legend = c("Estimate", "95% CI"), 
+       col = c("blue", "gray"), lwd = 2)
+```
+
+### Confidence Bands
+
+```{r}
+# Confidence bands
+
+# Construct confidence bands of kde by bootstrapping
+nrep <- 10000
+
+# Bootstrap starts
+bootkde <- replicate(nrep, 
+           {
+              # Draw bootstrap sample with replacement
+              res <- sample(octane$Rater, replace = TRUE)
+
+              # Compute KDE from resampled data and extract density estimates
+              # at same grid points as the original KDE
+              density(res, from = min(kde$x), to = max(kde$x), bw = "sj-ste")$y
+           })
+
+# Determine the (rowrise) rank of estimates # at each x-coordinate
+bootrank <- apply(bootkde, 1, rank)
+
+# Determine the smallest and largest ranks associated with each bootstrap estimate
+rank.min <- apply(bootrank, 1, min)
+rank.max <- apply(bootrank, 1, max)
+
+# Determine the percentiles of minimum rank and maximum rank
+alpha <- 0.05
+rankL <- quantile(rank.min, alpha/2)
+rankU <- quantile(rank.max, 1-alpha/2)
+
+# Determine the confidence bands
+# By construction, at most alpha/2 of the bootstrap estimates have 
+# a coordinate with value smaller(larger) than the lower(upper) limit
+bootci <- apply(bootkde, 1, quantile, c(rankL/nrep, rankU/nrep))
+
+# Create plot environment
+plot(kde, ylim = range(bootci), col = "blue", lwd = 2, 
+     main = title, xlab = "Raters")
+
+# Draw the region for confidence bands
+polygon(c(kde$x, rev(kde$x)), c(bootci[1,], rev(bootci[2,])),
+        col='gray', density = -0.5, border = FALSE)
+
+# Display the lines for KDE and pointwise confidence interval
+lines(kde, col = "blue", lwd = 2)
+lines(kde$x, ciL, col = "red", lwd = 2, lty = 3)
+lines(kde$x, ciU, col = "red", lwd = 2, lty = 3)
+legend("topleft", legend = c("Estimate", "95% poinwise CI", "95% Simultaneous CI"),
+       col = c("blue", "red", "gray"), lty = c(1, 3, NA), lwd = 2, pch = c(NA, NA, 15))
+```
+
+
+## Part (b)
+
+Compute and plot the bivariate KDE for (Rater, Customer).
+
+### Contour Plot
+
+```{r}
+# Compute bivariate KDEs for (Rater, Customer),
+# with SJPI bandwidth selector
+kde.sjpi <- kde(octane, H = Hpi(octane))
+
+# Contour plot of bivariate KDE for (Rater, Customer)
+plot(kde.sjpi, display = "filled.contour", 
+     cont = seq(10, 90, by = 10),
+     col = rev(terrain.colors(10, alpha = 0.8)), 
+     main = "Kernel Density for Octane Rating", 
+     xlab = "Rater", ylab = "Customer")
+```
+
+### Surface Plot
+
+```{r}
+# 3D density surface plot of bivariate KDE for (Rater, Customer)
+for (w in (1:10)*36) {
+plot(kde.sjpi, display = "persp", theta = w, phi = 15,
+     main = paste0("Kernel Density for Octane Rating theta = ",w), 
+     xlab = "Rater", ylab = "Customer", zlab = "Density")
+     Sys.sleep(1)
+}
+```
+
+## Part (c)
+
+Fit a local quadratic regression function to predict customer ratings from professional rater ratings.
+
+```{r}
+# Construct scatter plot for Customer rating vs Rater rating
+# with simple local regression curves added 
+for (alpha in (1:9)/10) {
+   plot(octane$Rater, octane$Customer, xlab = "Rater", 
+        ylab = "Customer", pch = 20, cex = 0.7)
+   lines(lowess(octane$Rater,octane$Customer,f=alpha), 
+         col = "blue", lwd = 2)
+   legend("topleft", paste0("Smoothing Parameter = ",alpha))
+   Sys.sleep(1)
+}
+```
+
+### Smoothing Pameter = 0.75
+
+```{r}
+# Perform local quadratic fitting with smoothing parameter 0.75 (default)
+lqfit <- loess(Customer~Rater, data = octane, degree = 2)
+summary(lqfit)
+```
+
+
+```{r}
+# Plot the fitted curve
+title = "Rating of Octane by Customers vs Professional Raters"
+plot(octane$Rater, octane$Customer, main = title, xlab = "Rater", 
+     ylab = "Customer", pch = 20, cex = 0.7)
+lines(lqfit$x[order(lqfit$x)], 
+      lqfit$fitted[order(lqfit$x)] , col = "blue", lwd=2)
+legend("topleft", "Smoothing Parameter = 0.75")
+```
+
+### Prediction
+
+```{r}
+# Predictions at Rater rating = 85, 90, 95
+predict(lqfit, newdata = c(85, 90, 95))
+```
+
+
+
