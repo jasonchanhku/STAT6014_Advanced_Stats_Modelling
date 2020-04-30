@@ -1,0 +1,137 @@
+---
+title: "Tutorial 9"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(mgcv)
+```
+
+# Question 1
+
+
+To develop a statistical model that allows the estimation of body fat for men using only a scale and a measuring tape, a sample of 252 men was surveyed, with their bodyfat (%), age (yr), weight (lbs) and wrist circumference (cm) collected in the dataset
+bodyfat.csv.
+
+```{r}
+bfd <- read.csv("/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Tutorial codes/Tutorial9/bodyfat.csv")
+
+head(bfd)
+```
+
+## Part (a)
+
+Fit a nonparametric regression function to predict bodyfat from weight, using smoothing spline.
+
+```{r}
+# Fit smoothing spline of bodyfat on weight,
+# with smoothing parameter selected based on GCV
+spfit <- smooth.spline(bfd$weight, bfd$bodyfat, cv = FALSE)
+spfit
+
+```
+
+```{r}
+# Plot the fitted regression line
+plot(bfd$weight, bfd$bodyfat, pch = 20, cex = 0.8,
+     main = "Cubic smoothing spline fit for Bodyfat data",
+     xlab = "Weight (lb)", ylab = "Bodyfat (%)")
+lines(spfit, col = "blue", lwd=2)
+info <- c(paste0("lambda = ",round(spfit$lambda,4)),
+          paste0("model df = ",round(spfit$df,2)),
+          paste0("RSS = ",round(spfit$pen.crit,2)),
+          paste0("GCV = ",round(spfit$cv.crit,2)))
+legend(280, 15, info)
+```
+
+
+## Part (b)
+
+Fit an additive model to predict bodyfat from all the other variables.
+
+```{r}
+# Fit additive model 
+bf.gam1 <- gam(bodyfat ~ s(age) + s(weight) + s(wrist), data = bfd)
+summary(bf.gam1)
+```
+
+```{r}
+# Construct fit plots for Model 1
+plot(bf.gam1, pages = 1, se = TRUE, shade = TRUE)
+```
+
+* Age seems like a good candidate for a linear relationship
+
+## Part (c)
+
+Refine the model in part (b) if there is any linear relationship revealed.
+
+```{r}
+## Q1.c
+# Fit partial linear additive model (Model 2),
+# with age as linear component
+bf.gam2 <- gam(bodyfat ~ age + s(weight) + s(wrist), data = bfd)
+summary(bf.gam2)
+```
+
+## Deviance Test
+
+```{r}
+# Compare Model 2 to Model 1 by Chi-square test
+anova(bf.gam2, bf.gam1, test = "Chisq")
+```
+
+* Model 2 is not significantly different from model 1 in terms of deviance
+
+* Wrist also seems like a good candidate for a linear relationship
+
+## Model 3, age, wrist as linear component
+
+```{r}
+# Fit partial linear additive model (Model 3),
+# with age and wrist as linear component
+bf.gam3 <- gam(bodyfat ~ age + wrist + s(weight) , data = bfd)
+summary(bf.gam3)
+```
+
+## Deviance Test of Model 2 and Model 3
+
+```{r}
+# Compare Model 3 to Model 2 by Chi-square test
+anova(bf.gam3, bf.gam2, test = "Chisq")
+```
+
+* Model 3 is significantly different from model 2. Non linearity of wrist cannot be ignored
+* Model 2 is chosen as final model
+
+
+
+```{r}
+# Construct fit plots for Model 2
+plot(bf.gam2, pages = 1, se = TRUE, shade = TRUE)
+```
+
+
+## Prediction
+
+```{r}
+
+# Predict the bodyfat of a 50 yrs old man 
+# whose weigh 210 lbs and wrist circumference 15 cm
+predict(bf.gam2, newdata = data.frame(age = 50, weight = 210, wrist = 15))
+```
+
+
+* Always start by fitting all regressors as additive, then look at summary and partial plot
+* Continue refining and checking deviance
+
+Final model is then model 2 and is fitted as:
+
+$$\hat{µ} = 7.2814 + 0.2644 age + s_1(weight) + s_2(wrist)$$
+
