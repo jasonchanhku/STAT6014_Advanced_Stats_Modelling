@@ -1,0 +1,289 @@
+---
+title: "Chapter 7"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r}
+library(dplyr)
+library(magrittr)
+```
+
+
+# Example 1: Occasionally Dishonest Casino
+
+```{r}
+library(HMM)
+```
+
+
+## Initialization
+```{r}
+# Set the name of states and symbols, and matrices of model parameters
+States <- c("Fair", "Loaded")
+Symbols <- 1:6
+Trans <- matrix(c(0.95, 0.05, 0.1, 0.9), nrow=2, ncol=2, byrow=TRUE)
+Emiss <- matrix(c(rep(1/6, 6), c(rep(0.1, 5), 0.5)), nrow=2, ncol=6, byrow=TRUE)
+Start <- c(0.5, 0.5)
+
+# Create a HMM
+hmm <- initHMM(States, Symbols, startProbs=Start, transProbs=Trans, emissionProbs=Emiss)
+hmm
+```
+
+## Simulation
+
+```{r}
+# Simulate a path of states and sequence of observations
+nSim <- 10000
+sim <- simHMM(hmm, nSim)
+```
+
+```{r}
+# Print the first 50 states and observations
+sim$states[1:50]
+sim$observation[1:50]
+```
+
+## Using Observations to get States 
+
+* Assuing previously simulated are the true parameter estimates
+
+### Initialization
+
+```{r}
+# Define a function that generates random probability vector
+ranProb <- function(n) {
+   p <- runif(n)
+   return (p / sum(p))
+}
+  
+# Initialize parameter estimates
+initStart <- ranProb(2)
+initTran <- matrix(c(ranProb(2),ranProb(2)), nrow=2, byrow=TRUE)
+initEmiss <- matrix(c(ranProb(6),ranProb(6)), nrow=2, byrow=TRUE)
+
+# Initialize a two-state training HMM
+States <- c("St1", "St2")
+train <- initHMM(States, Symbols, startProbs=initStart, 
+                 transProbs=initTran, emissionProbs=initEmiss)
+train
+```
+
+
+### Training
+
+#### Baum-Welch
+
+```{r}
+# Train the HMM by Baum-Welch and print the estimated parameters
+BWfit <- baumWelch(train, sim$observation, maxIteration=100, 
+                   delta=1E-9, pseudoCount=1)
+BWfit$hmm
+```
+
+* Baum Welch is more accurate
+
+### Viterbi
+
+* Computationally efficient but less accurate
+
+```{r}
+# Train the HMM by Viterbi and print the estimated parameters
+VTfit <- viterbiTraining(train, sim$observation, maxIteration=1000, 
+                         delta=1E-9, pseudoCount=1)
+VTfit$hmm
+
+```
+
+## Decoding
+
+```{r}
+# Rename the states of the fitted HMM according to emissioni distributions
+# Rename the states of the fitted HMM according to emissioni distributions
+fit <- initHMM(c("Fair","Loaded"), BWfit$hmm$Symbols, BWfit$hmm$startProbs,
+               BWfit$hmm$transProbs, BWfit$hmm$emissionProbs)
+```
+
+```{r}
+fit
+```
+
+
+### Viterbi
+
+
+```{r}
+# Viterbi decoding using simulated observations and fitted model
+vit <- viterbi(fit, sim$observation)
+# Print the first 100 predicted states
+vit[1:100]
+```
+
+
+
+
+### Forward and Backward
+
+```{r}
+# Calculate forward and backward probabilities (in log scale)
+# using simulated observations and fitted model
+fp <- forward(fit, sim$observation)
+bp <- backward(fit, sim$observation)
+fp[,1:5]
+bp[,1:5]
+```
+
+## Marginal Probability
+
+```{r}
+# Calculate marginal probability (in log scale) of observed sequence
+x <- fp[1,nSim]
+y <- fp[2,nSim]
+if (x>y) mProb <- x+log(1+exp(y-x)) else mProb <- y+log(1+exp(x-y))
+
+# Calculate posterior probabilities of each state for each observation
+posterior <- exp((fp + bp) - mProb)
+
+mProb
+posterior[,1:5]
+
+# Posterior decoding using simulated observations and fitted model
+post <- vector()
+for (i in 1:nSim) {
+   if (posterior[1,i] > posterior[2,i]) post[i] <- "Fair" 
+   else post[i] <- "Loaded"
+}
+post[1:100]
+```
+
+## Simulation Plotting
+
+```{r}
+
+# Plot the simulated (observed) sequence of rolls (first 1000 throws)
+nfirst <- 1000
+plot(sim$observation[1:nfirst], ylim = c(-9.5, 6), pch = 3, 
+     main = "Fair die and loaded die",
+     xlab = "Throw no.", ylab = "", bty = "n", yaxt = "n")
+axis(2, at = 1:6)
+
+# Compare true path and most probable paths (Viterbi and posterior)
+text(0, -1.2, adj = 0, cex = 0.8, col = "black", "True path: green = fair die")
+for (i in 1:nfirst) {
+   if (sim$states[i] == "Fair")
+      rect(i, -1, i + 1, 0, col = "green", border = NA)
+   else rect(i, -1, i + 1, 0, col = "red", border = NA)
+}
+text(0, -3.2, adj = 0, cex = 0.8, col = "black", "Most probable path (Viterbi)")
+for (i in 1:nfirst) {
+   if (vit[i] == "Fair")
+      rect(i, -3, i + 1, -2, col = "green", border = NA)
+   else rect(i, -3, i + 1, -2, col = "red", border = NA)
+}
+text(0, -5.2, adj = 0, cex = 0.8, col = "black", "Most probable path (posterior)")
+for (i in 1:nfirst) {
+   if (post[i] == "Fair")
+      rect(i, -5, i + 1, -4, col = "green", border = NA)
+   else rect(i, -5, i + 1, -4, col = "red", border = NA)
+}
+points(posterior[1, 1:nfirst] - 5, type = "l")
+
+# Show difference between true path and most probable paths
+text(0, -7.2, adj = 0, cex = 0.8, col = "black", "Difference (true vs Viterbi)")
+differ <- !(sim$states == vit)
+for (i in 1:nfirst) {
+   if (differ[i])
+      rect(i, -7, i + 1, -6, col = rgb(0.3, 0.3, 0.3), border = NA)
+   else rect(i, -7, i + 1, -6, col = rgb(0.9, 0.9, 0.9), border = NA)
+}
+text(0, -9.2, adj = 0, cex = 0.8, col = "black", "Difference (true vs posterior)")
+differ <- !(sim$states == post)
+for (i in 1:nfirst) {
+   if (differ[i])
+      rect(i, -9, i + 1, -8, col = rgb(0.3, 0.3, 0.3), border = NA)
+   else rect(i, -9, i + 1, -8, col = rgb(0.9, 0.9, 0.9), border = NA)
+}
+
+
+
+
+
+
+```
+
+
+# Example 2: Earthquake Time Series
+
+```{r}
+library(depmixS4)
+```
+
+
+
+```{r}
+# Set random seed to produce same results (for illustrative purpose)
+set.seed(100419)
+
+# Read Earthquakes Count Data
+eqdata <- read.csv("/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Lecture codes/R codes and data for Chapter 7 examples-20200202/earthquakes_data.csv",  header=TRUE, sep=",")
+
+head(eqdata)
+```
+
+
+## Initialization
+
+```{r}
+Year <- eqdata[,1]
+nEQ <- eqdata[,2]
+n <- nrow(eqdata)
+
+# Create a 2 state Poisson-HMM
+hmm <- depmix(nEQ~1, nstates=2, family=poisson(), ntimes=n, 
+              trstart=runif(4), respstart=runif(2,0,5))
+hmm
+```
+
+## Training
+
+```{r}
+# Fit the model by EM algorithm and returns an object of class depix.fitted
+fithmm <- fit(hmm, emcontrol=em.control(maxit=500, tol=1e-8, random.start=TRUE))
+
+# Show convergence message
+fithmm
+
+# Print out parameter estimates
+summary(fithmm)
+```
+
+## Decoding
+
+```{r}
+# Determine the viterbi states and posterior probabilities
+predStates <- posterior(fithmm)
+x <- cbind(Year, nEQ, predStates)
+
+# Create time series plot for the annual number of earthquakes
+plot(nEQ~Year, ylim = c(0, 50), xlim = c(1900, 2010), 
+     main = "Annual number of earthquakes", xlab = "Year", 
+     ylab = "Earthquakes", type="l")
+
+# Display most probable (Viterbi) states in the time series plot
+text(1900, 0.5, adj = 0, cex = 0.8, col = "black", 
+     "Red: State 1 (rate=26.0)        Green: State 2 (rate=15.4)")
+for (i in 1:n) {
+   if (predStates[i,1] == 1)
+      rect(1899+i, 2, 1900+i, 4, col = "red", border = NA)
+   else rect(1899+i, 2, 1900+i, 4, col = "green", border = NA)
+}
+
+```
+
+
+
+
