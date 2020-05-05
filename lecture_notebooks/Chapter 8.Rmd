@@ -1,0 +1,257 @@
+---
+title: "Chapter 8"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(bnlearn)
+```
+
+# Travel Survey  (Domain Knowledge Input)
+
+
+## Step 1: Initialization
+```{r}
+# Create a DAG with no arc
+variables = c("age","sex","edu","occ","res","trans")
+dag <- empty.graph(nodes = variables)
+
+# Add 6 arcs encoding dependencies
+dag <- set.arc(dag, from = "age", to = "edu")
+dag <- set.arc(dag, from = "sex", to = "edu")
+dag <- set.arc(dag, from = "edu", to = "occ")
+dag <- set.arc(dag, from = "edu", to = "res")
+dag <- set.arc(dag, from = "occ", to = "trans")
+dag <- set.arc(dag, from = "res", to = "trans")
+
+# Print the DAG information and plot the DAG
+dag
+```
+
+## DAG Plot
+
+```{r}
+plot(dag)
+```
+
+## Model String to Network
+
+* Can do the above but with model string
+
+```{r}
+# Build the network directly from the model
+dag2 <- model2network("[age][sex][edu|age:sex][occ|edu][res|edu][trans|occ:res]")
+
+# Compare structures of the two networks
+compare(dag, dag2)
+all.equal(dag, dag2)
+```
+
+## D-Separation and Markov Blanket
+
+```{r}
+# Check d-seperation of age and occ given edu
+dsep(dag, "age", "occ", "edu")
+
+# Check d-seperation of age and trans given res
+dsep(dag, "age", "trans", "res")
+
+# Show the Markov blanket of edu
+mb(dag, "edu")
+```
+
+## Step 2: Define Levels and Probabilities
+
+```{r}
+# Define levels for each node
+age.lv <- c("young","adult","old")
+sex.lv <- c("M","F")
+edu.lv <- c("hs","univ")
+occ.lv <- c("emp","self")
+res.lv <- c("small","big")
+trans.lv <- c("car","train","others")
+
+# Create arrays of parameters for each local distribution
+age.prob <- array(c(0.30, 0.50, 0.20), dim = 3, dimnames = list(age = age.lv))
+sex.prob <- array(c(0.60, 0.40), dim = 2, dimnames = list(sex = sex.lv))
+edu.prob <- array(c(0.75, 0.25, 0.64, 0.36, 0.72, 0.28, 
+                    0.70, 0.30, 0.88, 0.12, 0.90, 0.10), dim = c(2, 2, 3),
+                  dimnames = list(edu = edu.lv, sex = sex.lv, age = age.lv))
+occ.prob <- array(c(0.96, 0.04, 0.92, 0.08), dim = c(2, 2),
+                  dimnames = list(occ = occ.lv, edu = edu.lv))
+res.prob <- array(c(0.25, 0.75, 0.20, 0.80), dim = c(2, 2),
+                  dimnames = list(res = res.lv, edu = edu.lv))
+trans.prob <- array(c(0.48, 0.42, 0.10, 0.58, 0.24, 0.18,
+                      0.56, 0.36, 0.08, 0.70, 0.21, 0.09), dim = c(3, 2, 2),
+                    dimnames = list(trans = trans.lv, res = res.lv, occ = occ.lv))
+```
+
+
+## Step 3: Combine and Fit Model
+
+```{r}
+# Combine the network structure with local distributions to form a BN
+cpt <- list(age = age.prob, sex = sex.prob, edu = edu.prob, occ = occ.prob, 
+            res = res.prob, trans = trans.prob)
+tsbn <- custom.fit(dag, cpt)
+```
+
+```{r}
+tsbn
+```
+
+* Those with single variables are marginal distributions
+* Nodes without any arrows pointing to them will have marginal distributions
+* Nodes with arrows pointing towards them will have conditional distributions
+
+## Querying Information
+
+* Want to query $P(edu = univ | trans=car)$
+
+* Uses monte carlo, hence every query gives diff answer 
+
+* Best if provide n
+
+```{r}
+# CPQ: calculate P(edu="univ"|trans="car"), default sample size
+cpquery(tsbn, event=(edu=="univ"), evidence=(trans=="car"), method="ls")
+cpquery(tsbn, event=(edu=="univ"), evidence=(trans=="car"), method="ls")
+
+# CPQ: calculate P(edu="univ"|trans="car"), large sample size
+cpquery(tsbn, event=(edu=="univ"), evidence=(trans=="car"), method="ls", n=100000000)
+```
+
+# Travel Survey (Learn From Data)
+
+```{r}
+tsdata <- read.csv("/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Lecture codes/R codes and data for Chapter 8 examples-20200202/travel_survey_data.csv")
+
+head(tsdata)
+```
+
+
+## Learn the DAG from Data 
+
+### Grow Shrink Algorithm
+
+```{r}
+# Learn the DAG from data using Grow-Shrink algorithm
+gsdag <- gs(tsdata, whitelist=NULL, blacklist=NULL)
+
+# Print the learned DAG information and plot the DAG
+gsdag
+
+```
+
+
+```{r}
+plot(gsdag)
+```
+
+
+### Hill Climbing Algorithm (Greedy)
+
+```{r}
+# Learn the DAG from data using Hill-Climbing algorithm
+hcdag <- hc(tsdata, whitelist=NULL, blacklist=NULL)
+
+# Print the learned DAG information and plot the DAG
+hcdag
+
+```
+
+
+
+```{r}
+plot(hcdag)
+```
+
+
+## Parameter Estimation
+
+### GS 
+
+```{r}
+# Parameter estimation based on the DAG learned by GS
+gsfit <- bn.fit(gsdag, tsdata, method = "mle")
+
+# Print all the parameter estimates
+gsfit
+```
+
+
+### HC
+
+```{r}
+# Parameter estimation based on the DAG learned by GS
+hcfit <- bn.fit(hcdag, tsdata, method = "mle")
+
+# Print all the parameter estimates
+hcfit
+```
+
+
+## Querying
+
+```{r}
+cpquery(gsfit, event=(edu=="univ"), evidence=(trans=="car"), method="ls")
+cpquery(hcfit, event=(edu=="univ"), evidence=(trans=="car"), method="ls")
+```
+
+
+# Hybrid BN
+
+* Contains both continuous and discreet data
+
+```{r}
+# Load the hypothetical data set from the bnlearn package
+data(clgaussian.test)
+
+head(clgaussian.test)
+```
+
+
+## Training
+
+```{r}
+# Learn the DAG from data using Max-Min Hill-Climbing algorithm
+mmhcdag <- mmhc(clgaussian.test, whitelist=NULL, blacklist=NULL)
+
+# Print the learned DAG information
+mmhcdag
+```
+
+```{r}
+# Plot the DAG (highlight continuous nodes in red)
+plot(mmhcdag, highlight=c("D","E","H","G"), color="red")
+```
+
+* Red variables are the continuous variables
+* G is a variable that corresponds to conditional distribution given 4 variables
+
+```{r}
+# Parameter estimation based on the DAG learned
+fit <- bn.fit(mmhcdag, clgaussian.test, method = "mle")
+
+fit
+```
+
+* Continuous and discreet will form a normal distribution
+* Mean of the normal distribution is a linear regression given the numerical variable
+
+## Querying
+
+```{r}
+cpquery(fit, event=(A=="b"), evidence=(D>5), method="ls")
+cpquery(fit, event=(A=="b"), evidence=(C=="a"), method="ls")
+
+```
+
+
+
