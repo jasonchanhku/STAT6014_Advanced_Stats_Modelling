@@ -1,0 +1,142 @@
+---
+title: "Tutorial 11"
+output: 
+  html_notebook:
+    toc: true
+---
+
+# Libraries
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(HMM)
+```
+
+# Question 1
+
+The dataset HSI2.csv consists of the daily closing Hang Seng Index (HSI) over the last ten years. A simple model classifies the daily indexes into three observations: up, static, down, based on the percentage changes in the indexes (changes under 0.25% are regarded as static). The goal of this analysis is to built a Hidden Markov Model (HMM) to classify the market status into one of the three states: **Bull, Even, Bear**.
+
+```{r}
+# Read HSI Status Data
+hsi <-read.csv(file="/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Tutorial codes/Tutorial 11/HSI2.csv", header=TRUE, sep=",")
+
+head(hsi)
+```
+
+## Part (a)
+
+Fit a three-state HMM to the daily observations. Draw a diagram to show the architecture of the fitted HMM, and interpret the meaning of the hidden states.
+
+```{r}
+# A function that generate random probability vector of length n
+ranProb <- function(n) {
+   p <- runif(n)
+   return (p / sum(p))
+}
+  
+set.seed(4272019)
+
+# Initialize parameter estimates (3 states, 3 symbols)
+initStart <- ranProb(3)
+initTran <- matrix(c(ranProb(3),ranProb(3),ranProb(3)), nrow=3, byrow=TRUE)
+initEmiss <- matrix(c(ranProb(3),ranProb(3),ranProb(3)), nrow=3, byrow=TRUE)
+
+# Create a three-state HMM with randomized initital parameter estimates
+hsi.hmm <- initHMM(States = c("St1","St2","St3"), 
+                   Symbols = c("U", "S", "D"),
+                   startProbs = initStart,
+                   transProbs = initTran,
+                   emissionProbs = initEmiss)
+hsi.hmm
+```
+
+![](diagram.png)
+
+```{r}
+# Train the HMM by Baum-Welch and print the estimated parameters
+hsi.hmmfit <- baumWelch(hsi.hmm, hsi$Status, maxIteration = 100, 
+                        delta = 1E-9, pseudoCount = 1)
+hsi.hmmfit$hmm
+```
+
+
+## Part (b)
+
+The indexes observations in the last ten days are SDSSUSDSDD. Determine the most probable state path
+based on the fitted HMM.
+
+```{r}
+# Determine most probable state path for the last ten days
+# by Viterbi algorithm
+lastten <- c("S","D","S","S","U","S","D","S","D","D")
+path <- viterbi(hsi.hmmfit$hmm, lastten)
+path
+```
+
+# Question 2
+
+The dataset T11Q2.csv consists of a simulated dataset with 8 binary variables. The goal of this analysis is to built a Bayesian Network (BN) to fit the data.
+
+```{r}
+simdata <- read.csv("/Users/jasonchan/MSTAT/STAT6014_Advanced_Stat_Model/Tutorial codes/Tutorial 11/T11Q2.csv")
+
+head(simdata)
+```
+
+
+
+## Part (a)
+
+Fit a Bayesian network to the data by hill-climbing algorithm. Draw a diagram to show the fitted network structure.
+
+```{r}
+# Learn the DAG from data using Hill-Climbing algorithm
+hcdag <- hc(simdata)
+
+# Print the learned DAG information and plot the DAG
+hcdag
+```
+
+
+```{r}
+
+plot(hcdag)
+
+```
+
+```{r}
+# Parameter estimation based on the DAG learned by Hill-Climbing
+hcfit <- bn.fit(hcdag, simdata, method = "mle")
+
+# Print all the parameter estimates
+hcfit
+```
+
+## Part (b)
+
+```{r}
+modelstring(hcdag)
+```
+
+Refering to the above:
+
+$$P(A, T, L, S,B, D, R, X ) = P(A)P(L)P(S|L)P(T|A) P(B|S, T)P(R|L, T)P(D|B, R)P(X |R)$$
+
+
+## Part (c)
+
+Based on the fitted Bayesian network, determine the conditional probability of L=High given that A=Yes and R=Low
+
+```{r}
+# Calculate conditional probability of L="High" 
+# given A = "Yes" and R = "Low"
+cpquery(hcfit, event = (L=="High"), 
+        evidence = ((A == "Yes") & (R == "Low")), method = "ls")
+
+# More accurate calculation with more samples
+cpquery(hcfit, event = (L=="High"), 
+        evidence = ((A == "Yes") & (R == "Low")), 
+        method = "ls", n = 10000000)
+```
+
